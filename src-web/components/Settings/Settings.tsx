@@ -12,7 +12,6 @@ import { TabContent, Tabs } from '../core/Tabs/Tabs';
 import { HeaderSize } from '../HeaderSize';
 import { SettingsGeneral } from './SettingsGeneral';
 import { SettingsInterface } from './SettingsInterface';
-import { SettingsLicense } from './SettingsLicense';
 import { SettingsPlugins } from './SettingsPlugins';
 import { SettingsProxy } from './SettingsProxy';
 import { SettingsTheme } from './SettingsTheme';
@@ -26,8 +25,7 @@ const TAB_INTERFACE = 'interface';
 const TAB_THEME = 'theme';
 const TAB_PROXY = 'proxy';
 const TAB_PLUGINS = 'plugins';
-const TAB_LICENSE = 'license';
-const tabs = [TAB_GENERAL, TAB_THEME, TAB_INTERFACE, TAB_PROXY, TAB_PLUGINS, TAB_LICENSE] as const;
+const tabs = [TAB_GENERAL, TAB_THEME, TAB_INTERFACE, TAB_PROXY, TAB_PLUGINS] as const;
 export type SettingsTab = (typeof tabs)[number];
 
 export default function Settings({ hide }: Props) {
@@ -78,7 +76,7 @@ export default function Settings({ hide }: Props) {
           (value): TabItem => ({
             value,
             label: capitalize(value),
-            hidden: !appInfo.featureLicense && value === TAB_LICENSE,
+            hidden: false,
           }),
         )}
       >
@@ -96,9 +94,6 @@ export default function Settings({ hide }: Props) {
         </TabContent>
         <TabContent value={TAB_PROXY} className="overflow-y-auto h-full px-6 !py-4">
           <SettingsProxy />
-        </TabContent>
-        <TabContent value={TAB_LICENSE} className="overflow-y-auto h-full px-6 !py-4">
-          <SettingsLicense />
         </TabContent>
       </Tabs>
     </div>

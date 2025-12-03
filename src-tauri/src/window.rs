@@ -148,13 +148,6 @@ pub(crate) fn create_window<R: Runtime>(
             "zoom_in" => w.emit("zoom_in", true).unwrap(),
             "zoom_out" => w.emit("zoom_out", true).unwrap(),
             "settings" => w.emit("settings", true).unwrap(),
-            "open_feedback" => {
-                if let Err(e) =
-                    w.app_handle().opener().open_url("https://yaak.app/feedback", None::<&str>)
-                {
-                    warn!("Failed to open feedback {e:?}")
-                }
-            }
 
             // Commands for development
             "dev.reset_size" => webview_window
@@ -197,7 +190,7 @@ pub(crate) fn create_main_window(handle: &AppHandle, url: &str) -> Result<Webvie
     let config = CreateWindowConfig {
         url,
         label: label.as_str(),
-        title: "Yaak",
+        title: "Yeek",
         inner_size: Some((DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)),
         position: Some((
             // Offset by random amount so it's easier to differentiate

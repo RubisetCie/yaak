@@ -15,7 +15,7 @@ pub(crate) async fn handle_deep_link<R: Runtime>(
     url: &Url,
 ) -> Result<()> {
     let command = url.domain().unwrap_or_default();
-    info!("Yaak URI scheme invoked {}?{}", command, url.query().unwrap_or_default());
+    info!("URI scheme invoked {}?{}", command, url.query().unwrap_or_default());
 
     let query_map: HashMap<String, String> = url.query_pairs().into_owned().collect();
     let windows = app_handle.webview_windows();

@@ -1,6 +1,6 @@
 {
-  "productName": "Daak",
-  "identifier": "app.yaak.desktop.dev",
+  "productName": "Deek",
+  "identifier": "app.yeek.desktop.dev",
   "bundle": {
     "externalBin": [
       "vendored/node/yaaknode",

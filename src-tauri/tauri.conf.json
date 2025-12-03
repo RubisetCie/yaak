@@ -1,7 +1,7 @@
 {
-  "productName": "Yaak",
+  "productName": "Yeek",
   "version": "0.0.0",
-  "identifier": "app.yaak.desktop",
+  "identifier": "app.yeek.desktop",
   "build": {
     "beforeBuildCommand": "npm run tauri-before-build",
     "beforeDevCommand": "npm run tauri-before-dev",

@@ -2,10 +2,8 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { patchModel, settingsAtom } from '@yaakapp-internal/models';
 import { useAtomValue } from 'jotai';
 import { activeWorkspaceAtom } from '../../hooks/useActiveWorkspace';
-import { useCheckForUpdates } from '../../hooks/useCheckForUpdates';
 import { appInfo } from '../../lib/appInfo';
 import { revealInFinderText } from '../../lib/reveal';
-import { CargoFeature } from '../CargoFeature';
 import { Checkbox } from '../core/Checkbox';
 import { Heading } from '../core/Heading';
 import { IconButton } from '../core/IconButton';
@@ -18,7 +16,6 @@ import { VStack } from '../core/Stacks';
 export function SettingsGeneral() {
   const workspace = useAtomValue(activeWorkspaceAtom);
   const settings = useAtomValue(settingsAtom);
-  const checkForUpdates = useCheckForUpdates();
 
   if (settings == null || workspace == null) {
     return null;
@@ -26,72 +23,6 @@ export function SettingsGeneral() {
 
   return (
     <VStack space={1.5} className="mb-4">
-      <CargoFeature feature="updater">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-1">
-          <Select
-            name="updateChannel"
-            label="Update Channel"
-            labelPosition="left"
-            labelClassName="w-[14rem]"
-            size="sm"
-            value={settings.updateChannel}
-            onChange={(updateChannel) => patchModel(settings, { updateChannel })}
-            options={[
-              { label: 'Stable', value: 'stable' },
-              { label: 'Beta (more frequent)', value: 'beta' },
-            ]}
-          />
-          <IconButton
-            variant="border"
-            size="sm"
-            title="Check for updates"
-            icon="refresh"
-            spin={checkForUpdates.isPending}
-            onClick={() => checkForUpdates.mutateAsync()}
-          />
-        </div>
-
-        <Select
-          name="autoupdate"
-          value={settings.autoupdate ? 'auto' : 'manual'}
-          label="Update Behavior"
-          labelPosition="left"
-          size="sm"
-          labelClassName="w-[14rem]"
-          onChange={(v) => patchModel(settings, { autoupdate: v === 'auto' })}
-          options={[
-            { label: 'Automatic', value: 'auto' },
-            { label: 'Manual', value: 'manual' },
-          ]}
-        />
-        <Checkbox
-          className="pl-2 mt-1 ml-[14rem]"
-          checked={settings.autoDownloadUpdates}
-          disabled={!settings.autoupdate}
-          help="Automatically download Yaak updates (!50MB) in the background, so they will be immediately ready to install."
-          title="Automatically download updates"
-          onChange={(autoDownloadUpdates) => patchModel(settings, { autoDownloadUpdates })}
-        />
-
-        <Checkbox
-          className="pl-2 mt-1 ml-[14rem]"
-          checked={settings.checkNotifications}
-          title="Check for notifications"
-          help="Periodically ping Yaak servers to check for relevant notifications."
-          onChange={(checkNotifications) => patchModel(settings, { checkNotifications })}
-        />
-        <Checkbox
-          disabled
-          className="pl-2 mt-1 ml-[14rem]"
-          checked={false}
-          title="Send anonymous usage statistics"
-          help="Yaak is local-first and does not collect analytics or usage data 🔐"
-          onChange={(checkNotifications) => patchModel(settings, { checkNotifications })}
-        />
-      </CargoFeature>
-
-      <Separator className="my-4" />
-
       <Heading level={2}>
         Workspace{' '}
         <div className="inline-block ml-1 bg-surface-highlight px-2 py-0.5 rounded text text-shrink">

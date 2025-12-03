@@ -5,9 +5,7 @@ use crate::error::Result;
 use crate::grpc::{build_metadata, metadata_to_map, resolve_grpc_request};
 use crate::http_request::{resolve_http_request, send_http_request};
 use crate::import::import_data;
-use crate::notifications::YaakNotifier;
 use crate::render::{render_grpc_request, render_template};
-use crate::updates::{UpdateMode, UpdateTrigger, YaakUpdater};
 use crate::uri_scheme::handle_deep_link;
 use error::Result as YaakResult;
 use eventsource_client::{EventParser, SSE};
@@ -16,7 +14,6 @@ use std::collections::HashMap;
 use std::fs::{File, create_dir_all};
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::time::Duration;
 use std::{fs, panic};
 use tauri::{AppHandle, Emitter, RunEvent, State, WebviewWindow, is_dev};
 use tauri::{Listener, Runtime};
@@ -27,7 +24,6 @@ use tauri_plugin_log::{Builder, Target, TargetKind, log};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 use tokio::sync::Mutex;
 use tokio::task::block_in_place;
-use tokio::time;
 use yaak_common::window::WorkspaceWindowTrait;
 use yaak_grpc::manager::GrpcHandle;
 use yaak_grpc::{Code, ServiceDefinition, serialize_message};
@@ -60,10 +56,8 @@ mod grpc;
 mod history;
 mod http_request;
 mod import;
-mod notifications;
 mod plugin_events;
 mod render;
-mod updates;
 mod uri_scheme;
 mod window;
 mod window_menu;
@@ -76,8 +70,6 @@ struct AppMetaData {
     name: String,
     app_data_dir: String,
     app_log_dir: String,
-    feature_updater: bool,
-    feature_license: bool,
 }
 
 #[tauri::command]
@@ -90,8 +82,6 @@ async fn cmd_metadata(app_handle: AppHandle) -> YaakResult<AppMetaData> {
         name: app_handle.package_info().name.to_string(),
         app_data_dir: app_data_dir.to_string_lossy().to_string(),
         app_log_dir: app_log_dir.to_string_lossy().to_string(),
-        feature_license: cfg!(feature = "license"),
-        feature_updater: cfg!(feature = "updater"),
     })
 }
 
@@ -139,15 +129,6 @@ async fn cmd_render_template<R: Runtime>(
     )
     .await?;
     Ok(result)
-}
-
-#[tauri::command]
-async fn cmd_dismiss_notification<R: Runtime>(
-    window: WebviewWindow<R>,
-    notification_id: &str,
-    yaak_notifier: State<'_, Mutex<YaakNotifier>>,
-) -> YaakResult<()> {
-    Ok(yaak_notifier.lock().await.seen(&window, notification_id).await?)
 }
 
 #[tauri::command]
@@ -1266,20 +1247,6 @@ async fn cmd_new_main_window(app_handle: AppHandle, url: &str) -> YaakResult<()>
     Ok(())
 }
 
-#[tauri::command]
-async fn cmd_check_for_updates<R: Runtime>(
-    window: WebviewWindow<R>,
-    yaak_updater: State<'_, Mutex<YaakUpdater>>,
-) -> YaakResult<bool> {
-    let update_mode = get_update_mode(&window).await?;
-    let settings = window.db().get_settings();
-    Ok(yaak_updater
-        .lock()
-        .await
-        .check_now(&window, update_mode, settings.auto_download_updates, UpdateTrigger::User)
-        .await?)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[allow(unused_mut)]
@@ -1337,16 +1304,6 @@ pub fn run() {
         .plugin(yaak_ws::init())
         .plugin(yaak_sync::init());
 
-    #[cfg(feature = "license")]
-    {
-        builder = builder.plugin(yaak_license::init());
-    }
-
-    #[cfg(feature = "updater")]
-    {
-        builder = builder.plugin(tauri_plugin_updater::Builder::default().build());
-    }
-
     builder
         .setup(|app| {
             {
@@ -1379,14 +1336,6 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir().unwrap();
             create_dir_all(app_data_dir.clone()).expect("Problem creating App directory!");
 
-            // Add updater
-            let yaak_updater = YaakUpdater::new();
-            app.manage(Mutex::new(yaak_updater));
-
-            // Add notifier
-            let yaak_notifier = YaakNotifier::new();
-            app.manage(Mutex::new(yaak_notifier));
-
             // Add GRPC manager
             let grpc_handle = GrpcHandle::new(&app.app_handle());
             app.manage(Mutex::new(grpc_handle));
@@ -1399,13 +1348,11 @@ pub fn run() {
             cmd_call_http_authentication_action,
             cmd_call_http_request_action,
             cmd_call_grpc_request_action,
-            cmd_check_for_updates,
             cmd_create_grpc_request,
             cmd_curl_to_request,
             cmd_delete_all_grpc_connections,
             cmd_delete_all_http_responses,
             cmd_delete_send_history,
-            cmd_dismiss_notification,
             cmd_export_data,
             cmd_http_response_body,
             cmd_format_json,
@@ -1450,7 +1397,7 @@ pub fn run() {
                     let h = app_handle.clone();
                     tauri::async_runtime::spawn(async move {
                         let info = history::get_or_upsert_launch_info(&h);
-                        debug!("Launched Yaak {:?}", info);
+                        debug!("Launched Yeek {:?}", info);
                     });
 
                     // Cancel pending requests
@@ -1460,45 +1407,6 @@ pub fn run() {
                         let _ = db.cancel_pending_http_responses();
                         let _ = db.cancel_pending_grpc_connections();
                         let _ = db.cancel_pending_websocket_connections();
-                    });
-                }
-                RunEvent::WindowEvent {
-                    event: WindowEvent::Focused(true),
-                    label,
-                    ..
-                } => {
-                    if cfg!(feature = "updater") {
-                        // Run update check whenever the window is focused
-                        let w = app_handle.get_webview_window(&label).unwrap();
-                        let h = app_handle.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let settings = w.db().get_settings();
-                            if settings.autoupdate {
-                                time::sleep(Duration::from_secs(3)).await; // Wait a bit so it's not so jarring
-                                let val: State<'_, Mutex<YaakUpdater>> = h.state();
-                                let update_mode = get_update_mode(&w).await.unwrap();
-                                if let Err(e) = val
-                                    .lock()
-                                    .await
-                                    .maybe_check(&w, settings.auto_download_updates, update_mode)
-                                    .await
-                                {
-                                    warn!("Failed to check for updates {e:?}");
-                                }
-                            };
-                        });
-                    }
-
-                    let h = app_handle.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let windows = h.webview_windows();
-                        let w = windows.values().next().unwrap();
-                        tokio::time::sleep(Duration::from_millis(4000)).await;
-                        let val: State<'_, Mutex<YaakNotifier>> = w.state();
-                        let mut n = val.lock().await;
-                        if let Err(e) = n.maybe_check(&w).await {
-                            warn!("Failed to check for notifications {}", e)
-                        }
                     });
                 }
                 RunEvent::WindowEvent {
@@ -1514,11 +1422,6 @@ pub fn run() {
                 _ => {}
             };
         });
-}
-
-async fn get_update_mode<R: Runtime>(window: &WebviewWindow<R>) -> YaakResult<UpdateMode> {
-    let settings = window.db().get_settings();
-    Ok(UpdateMode::new(settings.update_channel.as_str()))
 }
 
 fn safe_uri(endpoint: &str) -> String {

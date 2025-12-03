@@ -28,10 +28,6 @@ pub enum Error {
     #[error(transparent)]
     WebsocketError(#[from] yaak_ws::error::Error),
 
-    #[cfg(feature = "license")]
-    #[error(transparent)]
-    LicenseError(#[from] yaak_license::error::Error),
-
     #[error(transparent)]
     PluginError(#[from] yaak_plugins::error::Error),
 
@@ -40,9 +36,6 @@ pub enum Error {
 
     #[error(transparent)]
     ClipboardError(#[from] tauri_plugin_clipboard_manager::Error),
-
-    #[error("Updater error: {0}")]
-    UpdaterError(#[from] tauri_plugin_updater::Error),
 
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::error::Error),

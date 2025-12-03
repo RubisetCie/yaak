@@ -30,12 +30,7 @@ impl<'a> DbContext<'a> {
             proxy: None,
             theme_dark: "yaak-dark".to_string(),
             theme_light: "yaak-light".to_string(),
-            update_channel: "stable".to_string(),
-            autoupdate: true,
             colored_methods: false,
-            hide_license_badge: false,
-            auto_download_updates: true,
-            check_notifications: true,
         };
         self.upsert(&settings, &UpdateSource::Background).expect("Failed to upsert settings")
     }

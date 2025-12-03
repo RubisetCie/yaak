@@ -1,10 +1,4 @@
 {
-  "build": {
-    "features": [
-      "updater",
-      "license"
-    ]
-  },
   "app": {
     "security": {
       "capabilities": [
@@ -14,29 +8,19 @@
           "windows": [
             "*"
           ],
-          "permissions": [
-            "yaak-license:default"
-          ]
+          "permissions": []
         }
       ]
     }
   },
-  "plugins": {
-    "updater": {
-      "endpoints": [
-        "https://update.yaak.app/check/{{target}}/{{arch}}/{{current_version}}"
-      ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVGRkFGMjQxRUNEOTQ3MzAKUldRd1I5bnNRZkw2NzRtMnRlWTN3R24xYUR3aGRsUjJzWGwvdHdEcGljb3ZJMUNlMjFsaHlqVU4K"
-    }
-  },
   "bundle": {
-    "publisher": "Yaak",
+    "publisher": "Rubisetcie",
     "license": "MIT",
     "copyright": "Yaak",
     "homepage": "https://yaak.app",
     "active": true,
     "category": "DeveloperTool",
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "externalBin": [
       "vendored/node/yaaknode",
       "vendored/protoc/yaakprotoc"
@@ -51,21 +35,11 @@
     "shortDescription": "Play with APIs, intuitively",
     "targets": [
       "app",
-      "appimage",
       "deb",
-      "dmg",
       "nsis",
+      "msi",
       "rpm"
     ],
-    "macOS": {
-      "minimumSystemVersion": "13.0",
-      "exceptionDomain": "",
-      "entitlements": "macos/entitlements.plist",
-      "frameworks": []
-    },
-    "windows": {
-      "signCommand": "trusted-signing-cli -e https://eus.codesigning.azure.net/ -a Yaak -c yaakapp %1"
-    },
     "linux": {
       "deb": {
         "desktopTemplate": "./template.desktop"

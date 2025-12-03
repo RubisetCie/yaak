@@ -119,11 +119,6 @@ pub struct Settings {
     pub proxy: Option<ProxySetting>,
     pub theme_dark: String,
     pub theme_light: String,
-    pub update_channel: String,
-    pub hide_license_badge: bool,
-    pub autoupdate: bool,
-    pub auto_download_updates: bool,
-    pub check_notifications: bool,
 }
 
 impl UpsertModelInfo for Settings {
@@ -171,12 +166,7 @@ impl UpsertModelInfo for Settings {
             (OpenWorkspaceNewWindow, self.open_workspace_new_window.into()),
             (ThemeDark, self.theme_dark.as_str().into()),
             (ThemeLight, self.theme_light.as_str().into()),
-            (UpdateChannel, self.update_channel.into()),
-            (HideLicenseBadge, self.hide_license_badge.into()),
-            (Autoupdate, self.autoupdate.into()),
-            (AutoDownloadUpdates, self.auto_download_updates.into()),
             (ColoredMethods, self.colored_methods.into()),
-            (CheckNotifications, self.check_notifications.into()),
             (Proxy, proxy.into()),
         ])
     }
@@ -197,12 +187,7 @@ impl UpsertModelInfo for Settings {
             SettingsIden::Proxy,
             SettingsIden::ThemeDark,
             SettingsIden::ThemeLight,
-            SettingsIden::UpdateChannel,
-            SettingsIden::HideLicenseBadge,
-            SettingsIden::Autoupdate,
-            SettingsIden::AutoDownloadUpdates,
             SettingsIden::ColoredMethods,
-            SettingsIden::CheckNotifications,
         ]
     }
 
@@ -230,12 +215,7 @@ impl UpsertModelInfo for Settings {
             theme_dark: row.get("theme_dark")?,
             theme_light: row.get("theme_light")?,
             hide_window_controls: row.get("hide_window_controls")?,
-            update_channel: row.get("update_channel")?,
-            autoupdate: row.get("autoupdate")?,
-            auto_download_updates: row.get("auto_download_updates")?,
-            hide_license_badge: row.get("hide_license_badge")?,
             colored_methods: row.get("colored_methods")?,
-            check_notifications: row.get("check_notifications")?,
         })
     }
 }

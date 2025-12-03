@@ -12,7 +12,6 @@ import { PillButton } from './core/PillButton';
 import { HStack } from './core/Stacks';
 import { EnvironmentActionsDropdown } from './EnvironmentActionsDropdown';
 import { ImportCurlButton } from './ImportCurlButton';
-import { LicenseBadge } from './LicenseBadge';
 import { RecentRequestsDropdown } from './RecentRequestsDropdown';
 import { SettingsDropdown } from './SettingsDropdown';
 import { SidebarActions } from './SidebarActions';
@@ -55,9 +54,7 @@ export const WorkspaceHeader = memo(function WorkspaceHeader({ className }: Prop
           <PillButton color="danger" onClick={setupOrConfigureEncryption}>
             Enter Encryption Key
           </PillButton>
-        ) : (
-          <LicenseBadge />
-        )}
+        ):<div style="display:inline"></div>}
         <IconButton
           icon={
             workspaceLayout === 'responsive'
