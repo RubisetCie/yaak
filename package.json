@@ -50,7 +50,6 @@
     "plugins/themes-yaak",
     "crates-tauri/yaak-app",
     "crates-tauri/yaak-fonts",
-    "crates-tauri/yaak-license",
     "crates-tauri/yaak-mac-window",
     "crates/yaak-crypto",
     "crates/yaak-git",

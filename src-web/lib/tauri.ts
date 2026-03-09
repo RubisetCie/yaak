@@ -15,7 +15,6 @@ type TauriCmd =
   | 'cmd_delete_all_grpc_connections'
   | 'cmd_delete_all_http_responses'
   | 'cmd_delete_send_history'
-  | 'cmd_dismiss_notification'
   | 'cmd_export_data'
   | 'cmd_format_graphql'
   | 'cmd_format_json'

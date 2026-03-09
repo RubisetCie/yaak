@@ -1,6 +1,5 @@
 import { type } from '@tauri-apps/plugin-os';
 import { useFonts } from '@yaakapp-internal/fonts';
-import { useLicense } from '@yaakapp-internal/license';
 import type { EditorKeymap, Settings } from '@yaakapp-internal/models';
 import { patchModel, settingsAtom } from '@yaakapp-internal/models';
 import { useAtomValue } from 'jotai';
@@ -10,7 +9,6 @@ import { activeWorkspaceAtom } from '../../hooks/useActiveWorkspace';
 import { clamp } from '../../lib/clamp';
 import { showConfirm } from '../../lib/confirm';
 import { invokeCmd } from '../../lib/tauri';
-import { CargoFeature } from '../CargoFeature';
 import { Button } from '../core/Button';
 import { Checkbox } from '../core/Checkbox';
 import { Heading } from '../core/Heading';
@@ -158,9 +156,6 @@ export function SettingsInterface() {
         title="Colorize request methods"
         onChange={(coloredMethods) => patchModel(settings, { coloredMethods })}
       />
-      <CargoFeature feature="license">
-        <LicenseSettings settings={settings} />
-      </CargoFeature>
 
       <NativeTitlebarSetting settings={settings} />
 
@@ -199,47 +194,5 @@ function NativeTitlebarSetting({ settings }: { settings: Settings }) {
         </Button>
       )}
     </div>
-  );
-}
-
-function LicenseSettings({ settings }: { settings: Settings }) {
-  const license = useLicense();
-  if (license.check.data?.status !== 'personal_use') {
-    return null;
-  }
-
-  return (
-    <Checkbox
-      checked={settings.hideLicenseBadge}
-      title="Hide personal use badge"
-      onChange={async (hideLicenseBadge) => {
-        if (hideLicenseBadge) {
-          const confirmed = await showConfirm({
-            id: 'hide-license-badge',
-            title: 'Confirm Personal Use',
-            confirmText: 'Confirm',
-            description: (
-              <VStack space={3}>
-                <p>Hey there 👋🏼</p>
-                <p>
-                  Yaak is free for personal projects and learning.{' '}
-                  <strong>If you’re using Yaak at work, a license is required.</strong>
-                </p>
-                <p>
-                  Licenses help keep Yaak independent and sustainable.{' '}
-                  <Link href="https://yaak.app/pricing?s=badge">Purchase a License →</Link>
-                </p>
-              </VStack>
-            ),
-            requireTyping: 'Personal Use',
-            color: 'info',
-          });
-          if (!confirmed) {
-            return; // Cancel
-          }
-        }
-        await patchModel(settings, { hideLicenseBadge });
-      }}
-    />
   );
 }

@@ -8015,38 +8015,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tauri-plugin-updater"
-version = "2.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27cbc31740f4d507712550694749572ec0e43bdd66992db7599b89fbfd6b167b"
-dependencies = [
- "base64 0.22.1",
- "dirs",
- "flate2",
- "futures-util",
- "http",
- "infer",
- "log 0.4.29",
- "minisign-verify",
- "osakit",
- "percent-encoding",
- "reqwest",
- "semver",
- "serde",
- "serde_json",
- "tar",
- "tauri",
- "tauri-plugin",
- "tempfile",
- "thiserror 2.0.17",
- "time",
- "tokio",
- "url",
- "windows-sys 0.60.2",
- "zip",
-]
-
-[[package]]
 name = "tauri-plugin-window-state"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10275,7 +10243,6 @@ dependencies = [
  "tauri-plugin-os",
  "tauri-plugin-shell",
  "tauri-plugin-single-instance",
- "tauri-plugin-updater",
  "tauri-plugin-window-state",
  "thiserror 2.0.17",
  "tokio",
@@ -10294,7 +10261,6 @@ dependencies = [
  "yaak-git",
  "yaak-grpc",
  "yaak-http",
- "yaak-license",
  "yaak-mac-window",
  "yaak-models",
  "yaak-plugins",
@@ -10462,24 +10428,6 @@ dependencies = [
  "yaak-templates",
  "yaak-tls",
  "zstd",
-]
-
-[[package]]
-name = "yaak-license"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "log 0.4.29",
- "reqwest",
- "serde",
- "serde_json",
- "tauri",
- "tauri-plugin",
- "thiserror 2.0.17",
- "ts-rs",
- "yaak-api",
- "yaak-common",
- "yaak-models",
 ]
 
 [[package]]

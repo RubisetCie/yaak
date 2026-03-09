@@ -17,7 +17,6 @@ pub struct LaunchEventInfo {
     pub previous_version: String,
     pub launched_after_update: bool,
     pub version_since: NaiveDateTime,
-    pub user_since: NaiveDateTime,
     pub num_launches: i32,
 }
 
@@ -29,7 +28,6 @@ pub fn get_or_upsert_launch_info<R: Runtime>(app_handle: &AppHandle<R>) -> &Laun
         let mut info = LaunchEventInfo {
             version_since: app_handle.db().get_key_value_dte(NAMESPACE, VERSION_SINCE_KEY, now),
             current_version: app_handle.package_info().version.to_string(),
-            user_since: app_handle.db().get_settings().created_at,
             num_launches: app_handle.db().get_key_value_int(NAMESPACE, NUM_LAUNCHES_KEY, 0) + 1,
 
             // The rest will be set below

@@ -22,7 +22,6 @@ members = [
     # Tauri-specific crates
     "crates-tauri/yaak-app",
     "crates-tauri/yaak-fonts",
-    "crates-tauri/yaak-license",
     "crates-tauri/yaak-mac-window",
     "crates-tauri/yaak-tauri-utils",
 ]
@@ -66,9 +65,8 @@ yaak-api = { path = "crates/yaak-api" }
 
 # Internal crates - Tauri-specific
 yaak-fonts = { path = "crates-tauri/yaak-fonts" }
-yaak-license = { path = "crates-tauri/yaak-license" }
 yaak-mac-window = { path = "crates-tauri/yaak-mac-window" }
 yaak-tauri-utils = { path = "crates-tauri/yaak-tauri-utils" }
 
 [profile.release]
-strip = false
+strip = true
