@@ -1,33 +1,33 @@
-import { type } from '@tauri-apps/plugin-os';
-import { useFonts } from '@yaakapp-internal/fonts';
-import type { EditorKeymap, Settings } from '@yaakapp-internal/models';
-import { patchModel, settingsAtom } from '@yaakapp-internal/models';
-import { useAtomValue } from 'jotai';
-import { useState } from 'react';
+import { type } from "@tauri-apps/plugin-os";
+import { useFonts } from "@yaakapp-internal/fonts";
+import type { EditorKeymap, Settings } from "@yaakapp-internal/models";
+import { patchModel, settingsAtom } from "@yaakapp-internal/models";
+import { useAtomValue } from "jotai";
+import { useState } from "react";
 
-import { activeWorkspaceAtom } from '../../hooks/useActiveWorkspace';
-import { clamp } from '../../lib/clamp';
-import { showConfirm } from '../../lib/confirm';
-import { invokeCmd } from '../../lib/tauri';
-import { Button } from '../core/Button';
-import { Checkbox } from '../core/Checkbox';
-import { Heading } from '../core/Heading';
-import { Icon } from '../core/Icon';
-import { Link } from '../core/Link';
-import { Select } from '../core/Select';
-import { HStack, VStack } from '../core/Stacks';
+import { activeWorkspaceAtom } from "../../hooks/useActiveWorkspace";
+import { clamp } from "../../lib/clamp";
+import { showConfirm } from "../../lib/confirm";
+import { invokeCmd } from "../../lib/tauri";
+import { Button } from "../core/Button";
+import { Checkbox } from "../core/Checkbox";
+import { Heading } from "../core/Heading";
+import { Icon } from "../core/Icon";
+import { Link } from "../core/Link";
+import { Select } from "../core/Select";
+import { HStack, VStack } from "../core/Stacks";
 
-const NULL_FONT_VALUE = '__NULL_FONT__';
+const NULL_FONT_VALUE = "__NULL_FONT__";
 
 const fontSizeOptions = [
   8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
 ].map((n) => ({ label: `${n}`, value: `${n}` }));
 
 const keymaps: { value: EditorKeymap; label: string }[] = [
-  { value: 'default', label: 'Default' },
-  { value: 'vim', label: 'Vim' },
-  { value: 'vscode', label: 'VSCode' },
-  { value: 'emacs', label: 'Emacs' },
+  { value: "default", label: "Default" },
+  { value: "vim", label: "Vim" },
+  { value: "vscode", label: "VSCode" },
+  { value: "emacs", label: "Emacs" },
 ];
 
 export function SettingsInterface() {
@@ -52,20 +52,20 @@ export function SettingsInterface() {
         help="When opening a workspace, should it open in the current window or a new window?"
         value={
           settings.openWorkspaceNewWindow === true
-            ? 'new'
+            ? "new"
             : settings.openWorkspaceNewWindow === false
-              ? 'current'
-              : 'ask'
+              ? "current"
+              : "ask"
         }
         onChange={async (v) => {
-          if (v === 'current') await patchModel(settings, { openWorkspaceNewWindow: false });
-          else if (v === 'new') await patchModel(settings, { openWorkspaceNewWindow: true });
+          if (v === "current") await patchModel(settings, { openWorkspaceNewWindow: false });
+          else if (v === "new") await patchModel(settings, { openWorkspaceNewWindow: true });
           else await patchModel(settings, { openWorkspaceNewWindow: null });
         }}
         options={[
-          { label: 'Always ask', value: 'ask' },
-          { label: 'Open in current window', value: 'current' },
-          { label: 'Open in new window', value: 'new' },
+          { label: "Always ask", value: "ask" },
+          { label: "Open in current window", value: "current" },
+          { label: "Open in new window", value: "new" },
         ]}
       />
       <HStack space={2} alignItems="end">
@@ -76,7 +76,7 @@ export function SettingsInterface() {
             label="Interface font"
             value={settings.interfaceFont ?? NULL_FONT_VALUE}
             options={[
-              { label: 'System default', value: NULL_FONT_VALUE },
+              { label: "System default", value: NULL_FONT_VALUE },
               ...(fonts.data.uiFonts.map((f) => ({
                 label: f,
                 value: f,
@@ -112,7 +112,7 @@ export function SettingsInterface() {
             label="Editor font"
             value={settings.editorFont ?? NULL_FONT_VALUE}
             options={[
-              { label: 'System default', value: NULL_FONT_VALUE },
+              { label: "System default", value: NULL_FONT_VALUE },
               ...(fonts.data.editorFonts.map((f) => ({
                 label: f,
                 value: f,
@@ -159,7 +159,7 @@ export function SettingsInterface() {
 
       <NativeTitlebarSetting settings={settings} />
 
-      {type() !== 'macos' && (
+      {type() !== "macos" && (
         <Checkbox
           checked={settings.hideWindowControls}
           title="Hide window controls"
@@ -187,7 +187,7 @@ function NativeTitlebarSetting({ settings }: { settings: Settings }) {
           size="2xs"
           onClick={async () => {
             await patchModel(settings, { useNativeTitlebar: nativeTitlebar });
-            await invokeCmd('cmd_restart');
+            await invokeCmd("cmd_restart");
           }}
         >
           Apply and Restart

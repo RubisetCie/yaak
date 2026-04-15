@@ -29,17 +29,20 @@ It’s fast, lightweight, and private. No telemetry, no VC funding, and no cloud
 
 ### Stay secure
 
+
 - Use OAuth 2.0, JWT, Basic Auth, or custom plugins for authentication.
-- Secure sensitive values with encrypted secrets. 
+- Secure sensitive values with encrypted secrets.
 - Store secrets in your OS keychain.
 
 ### Organize & collaborate
+
 
 - Group requests into workspaces and nested folders.
 - Use environment variables to switch between dev, staging, and prod.
 - Mirror workspaces to your filesystem for versioning in Git or syncing with Dropbox.
 
 ### Extend & customize
+
 
 - Insert dynamic values like UUIDs or timestamps with template tags.
 - Pick from built-in themes or build your own.

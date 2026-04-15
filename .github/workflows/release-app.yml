@@ -66,8 +66,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: "24"
+          cache: true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -86,11 +89,13 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install JS modules
-        run: npm ci
+        run: vp install
       - name: Bootstrapping
+        env:
+          YAAK_TARGET_ARCH: ${{ matrix.yaak_arch }}
         run: npm run bootstrap
       - name: Run JS Tests
-        run: npm test
+        run: vp test
         if: ${{ github.event.inputs.unit_tests == 'true' }}
       - name: Run Rust Tests
         run: cargo test --all --exclude yaak-cli

@@ -1,12 +1,13 @@
-import type { DnsOverride, Workspace } from '@yaakapp-internal/models';
-import { patchModel } from '@yaakapp-internal/models';
-import { useCallback, useId, useMemo } from 'react';
-import { Button } from './core/Button';
-import { Checkbox } from './core/Checkbox';
-import { IconButton } from './core/IconButton';
-import { PlainInput } from './core/PlainInput';
-import { HStack, VStack } from './core/Stacks';
-import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from './core/Table';
+import type { DnsOverride, Workspace } from "@yaakapp-internal/models";
+import { patchModel } from "@yaakapp-internal/models";
+import { useCallback, useId, useMemo } from "react";
+import { fireAndForget } from "../lib/fireAndForget";
+import { Button } from "./core/Button";
+import { Checkbox } from "./core/Checkbox";
+import { IconButton } from "./core/IconButton";
+import { PlainInput } from "./core/PlainInput";
+import { HStack, VStack } from "./core/Stacks";
+import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from "./core/Table";
 
 interface Props {
   workspace: Workspace;
@@ -29,15 +30,15 @@ export function DnsOverridesEditor({ workspace }: Props) {
 
   const handleChange = useCallback(
     (overrides: DnsOverride[]) => {
-      patchModel(workspace, { settingDnsOverrides: overrides });
+      fireAndForget(patchModel(workspace, { settingDnsOverrides: overrides }));
     },
     [workspace],
   );
 
   const handleAdd = useCallback(() => {
     const newOverride: DnsOverride = {
-      hostname: '',
-      ipv4: [''],
+      hostname: "",
+      ipv4: [""],
       ipv6: [],
       enabled: true,
     };
@@ -65,9 +66,9 @@ export function DnsOverridesEditor({ workspace }: Props) {
   return (
     <VStack space={3} className="pb-3">
       <div className="text-text-subtle text-sm">
-        Override DNS resolution for specific hostnames. This works like{' '}
-        <code className="text-text-subtlest bg-surface-highlight px-1 rounded">/etc/hosts</code>{' '}
-        but only for requests made from this workspace.
+        Override DNS resolution for specific hostnames. This works like{" "}
+        <code className="text-text-subtlest bg-surface-highlight px-1 rounded">/etc/hosts</code> but
+        only for requests made from this workspace.
       </div>
 
       {overridesWithIds.length > 0 && (
@@ -110,15 +111,15 @@ interface DnsOverrideRowProps {
 }
 
 function DnsOverrideRow({ override, onUpdate, onDelete }: DnsOverrideRowProps) {
-  const ipv4Value = override.ipv4.join(', ');
-  const ipv6Value = override.ipv6.join(', ');
+  const ipv4Value = override.ipv4.join(", ");
+  const ipv6Value = override.ipv6.join(", ");
 
   return (
     <TableRow>
       <TableCell>
         <Checkbox
           hideLabel
-          title={override.enabled ? 'Disable override' : 'Enable override'}
+          title={override.enabled ? "Disable override" : "Enable override"}
           checked={override.enabled ?? true}
           onChange={(enabled) => onUpdate({ enabled })}
         />
@@ -143,7 +144,7 @@ function DnsOverrideRow({ override, onUpdate, onDelete }: DnsOverrideRowProps) {
           onChange={(value) =>
             onUpdate({
               ipv4: value
-                .split(',')
+                .split(",")
                 .map((s) => s.trim())
                 .filter(Boolean),
             })
@@ -160,7 +161,7 @@ function DnsOverrideRow({ override, onUpdate, onDelete }: DnsOverrideRowProps) {
           onChange={(value) =>
             onUpdate({
               ipv6: value
-                .split(',')
+                .split(",")
                 .map((s) => s.trim())
                 .filter(Boolean),
             })

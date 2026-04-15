@@ -1,9 +1,10 @@
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { fireAndForget } from "../fireAndForget";
 
-export type Appearance = 'light' | 'dark';
+export type Appearance = "light" | "dark";
 
 export function getCSSAppearance(): Appearance {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 export async function getWindowAppearance(): Promise<Appearance> {
@@ -22,13 +23,15 @@ export function subscribeToWindowAppearanceChange(
     unsubscribe: () => {},
   };
 
-  getCurrentWebviewWindow()
-    .onThemeChanged((t) => {
-      cb(t.payload);
-    })
-    .then((l) => {
-      container.unsubscribe = l;
-    });
+  fireAndForget(
+    getCurrentWebviewWindow()
+      .onThemeChanged((t) => {
+        cb(t.payload);
+      })
+      .then((l) => {
+        container.unsubscribe = l;
+      }),
+  );
 
   return () => container.unsubscribe();
 }
@@ -37,12 +40,12 @@ export function resolveAppearance(
   preferredAppearance: Appearance,
   appearanceSetting: string,
 ): Appearance {
-  const appearance = appearanceSetting === 'system' ? preferredAppearance : appearanceSetting;
-  return appearance === 'dark' ? 'dark' : 'light';
+  const appearance = appearanceSetting === "system" ? preferredAppearance : appearanceSetting;
+  return appearance === "dark" ? "dark" : "light";
 }
 
 export function subscribeToPreferredAppearance(cb: (a: Appearance) => void) {
   cb(getCSSAppearance());
-  getWindowAppearance().then(cb);
+  fireAndForget(getWindowAppearance().then(cb));
   subscribeToWindowAppearanceChange(cb);
 }

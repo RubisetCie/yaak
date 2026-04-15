@@ -1,42 +1,43 @@
-import { emit } from '@tauri-apps/api/event';
-import { openUrl } from '@tauri-apps/plugin-opener';
-import { debounce } from '@yaakapp-internal/lib';
+import { emit } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { debounce } from "@yaakapp-internal/lib";
 import type {
   FormInput,
   InternalEvent,
   JsonPrimitive,
   ShowToastRequest,
-} from '@yaakapp-internal/plugins';
-import { openSettings } from '../commands/openSettings';
-import { Button } from '../components/core/Button';
-import { ButtonInfiniteLoading } from '../components/core/ButtonInfiniteLoading';
-import { Icon } from '../components/core/Icon';
-import { HStack, VStack } from '../components/core/Stacks';
+} from "@yaakapp-internal/plugins";
+import { openSettings } from "../commands/openSettings";
+import { Button } from "../components/core/Button";
+import { ButtonInfiniteLoading } from "../components/core/ButtonInfiniteLoading";
+import { Icon } from "../components/core/Icon";
+import { HStack, VStack } from "../components/core/Stacks";
 
 // Listen for toasts
-import { listenToTauriEvent } from '../hooks/useListenToTauriEvent';
-import { updateAvailableAtom } from './atoms';
-import { stringToColor } from './color';
-import { generateId } from './generateId';
-import { jotaiStore } from './jotai';
-import { showPrompt } from './prompt';
-import { showPromptForm } from './prompt-form';
-import { invokeCmd } from './tauri';
-import { showToast } from './toast';
+import { listenToTauriEvent } from "../hooks/useListenToTauriEvent";
+import { fireAndForget } from "./fireAndForget";
+import { updateAvailableAtom } from "./atoms";
+import { stringToColor } from "./color";
+import { generateId } from "./generateId";
+import { jotaiStore } from "./jotai";
+import { showPrompt } from "./prompt";
+import { showPromptForm } from "./prompt-form";
+import { invokeCmd } from "./tauri";
+import { showToast } from "./toast";
 
 export function initGlobalListeners() {
-  listenToTauriEvent<ShowToastRequest>('show_toast', (event) => {
+  listenToTauriEvent<ShowToastRequest>("show_toast", (event) => {
     showToast({ ...event.payload });
   });
 
-  listenToTauriEvent('settings', () => openSettings.mutate(null));
+  listenToTauriEvent("settings", () => openSettings.mutate(null));
 
   // Track active dynamic form dialogs so follow-up input updates can reach them
   const activeForms = new Map<string, (inputs: FormInput[]) => void>();
 
   // Listen for plugin events
-  listenToTauriEvent<InternalEvent>('plugin_event', async ({ payload: event }) => {
-    if (event.payload.type === 'prompt_text_request') {
+  listenToTauriEvent<InternalEvent>("plugin_event", async ({ payload: event }) => {
+    if (event.payload.type === "prompt_text_request") {
       const value = await showPrompt(event.payload);
       const result: InternalEvent = {
         id: generateId(),
@@ -45,12 +46,12 @@ export function initGlobalListeners() {
         pluginRefId: event.pluginRefId,
         context: event.context,
         payload: {
-          type: 'prompt_text_response',
+          type: "prompt_text_response",
           value,
         },
       };
       await emit(event.id, result);
-    } else if (event.payload.type === 'prompt_form_request') {
+    } else if (event.payload.type === "prompt_form_request") {
       if (event.replyId != null) {
         // Follow-up update from plugin runtime — update the active dialog's inputs
         const updateInputs = activeForms.get(event.replyId);
@@ -69,12 +70,12 @@ export function initGlobalListeners() {
           pluginRefId: event.pluginRefId,
           context: event.context,
           payload: {
-            type: 'prompt_form_response',
+            type: "prompt_form_response",
             values,
             done,
           },
         };
-        emit(event.id, result);
+        fireAndForget(emit(event.id, result));
       };
 
       const values = await showPromptForm({
@@ -94,4 +95,39 @@ export function initGlobalListeners() {
       emitFormResponse(values, true);
     }
   });
+
+  // Check for plugin initialization errors
+  fireAndForget(
+    invokeCmd<[string, string][]>("cmd_plugin_init_errors").then((errors) => {
+      for (const [dir, message] of errors) {
+        const dirBasename = dir.split("/").pop() ?? dir;
+        showToast({
+          id: `plugin-init-error-${dirBasename}`,
+          color: "warning",
+          timeout: null,
+          message: (
+            <VStack>
+              <h2 className="font-semibold">Plugin failed to load</h2>
+              <p className="text-text-subtle text-sm">
+                {dirBasename}: {message}
+              </p>
+            </VStack>
+          ),
+          action: ({ hide }) => (
+            <Button
+              size="xs"
+              color="warning"
+              variant="border"
+              onClick={() => {
+                hide();
+                openSettings.mutate("plugins:installed");
+              }}
+            >
+              View Plugins
+            </Button>
+          ),
+        });
+      }
+    }),
+  );
 }

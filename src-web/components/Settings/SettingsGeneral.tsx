@@ -1,17 +1,17 @@
-import { revealItemInDir } from '@tauri-apps/plugin-opener';
-import { patchModel, settingsAtom } from '@yaakapp-internal/models';
-import { useAtomValue } from 'jotai';
-import { activeWorkspaceAtom } from '../../hooks/useActiveWorkspace';
-import { appInfo } from '../../lib/appInfo';
-import { revealInFinderText } from '../../lib/reveal';
-import { Checkbox } from '../core/Checkbox';
-import { Heading } from '../core/Heading';
-import { IconButton } from '../core/IconButton';
-import { KeyValueRow, KeyValueRows } from '../core/KeyValueRow';
-import { PlainInput } from '../core/PlainInput';
-import { Select } from '../core/Select';
-import { Separator } from '../core/Separator';
-import { VStack } from '../core/Stacks';
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { patchModel, settingsAtom } from "@yaakapp-internal/models";
+import { useAtomValue } from "jotai";
+import { activeWorkspaceAtom } from "../../hooks/useActiveWorkspace";
+import { appInfo } from "../../lib/appInfo";
+import { revealInFinderText } from "../../lib/reveal";
+import { Checkbox } from "../core/Checkbox";
+import { Heading } from "../core/Heading";
+import { IconButton } from "../core/IconButton";
+import { KeyValueRow, KeyValueRows } from "../core/KeyValueRow";
+import { PlainInput } from "../core/PlainInput";
+import { Select } from "../core/Select";
+import { Separator } from "../core/Separator";
+import { VStack } from "../core/Stacks";
 
 export function SettingsGeneral() {
   const workspace = useAtomValue(activeWorkspaceAtom);
@@ -28,7 +28,7 @@ export function SettingsGeneral() {
         <p className="text-text-subtle">Configure general settings and more.</p>
       </div>
       <Heading level={2}>
-        Workspace{' '}
+        Workspace{" "}
         <div className="inline-block ml-1 bg-surface-highlight px-2 py-0.5 rounded text text-shrink">
           {workspace.name}
         </div>
