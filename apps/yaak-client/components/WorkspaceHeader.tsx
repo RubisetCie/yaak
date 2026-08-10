@@ -60,7 +60,9 @@ export const WorkspaceHeader = memo(function WorkspaceHeader({
           <PillButton color="danger" onClick={setupOrConfigureEncryption}>
             Enter Encryption Key
           </PillButton>
-        ):<div style="display:inline"></div>}
+        ) : (
+          <div></div>
+        )}
         <IconButton
           icon={
             workspaceLayout === "responsive"

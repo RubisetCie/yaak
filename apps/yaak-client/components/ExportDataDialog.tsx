@@ -85,7 +85,7 @@ function ExportDataDialogContent({
   const numSelected = Object.values(selectedWorkspaces).filter(Boolean).length;
   const noneSelected = numSelected === 0;
   return (
-    <div className="w-full grid grid-rows-[minmax(0,1fr)_auto]">
+    <div className="h-full w-full grid grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-b-lg">
       <VStack space={3} className="overflow-auto px-5 pb-6">
         <table className="w-full mb-auto min-w-full max-w-full divide-y divide-surface-highlight">
           <thead>
@@ -137,9 +137,9 @@ function ExportDataDialogContent({
           />
         </DetailsBanner>
       </VStack>
-      <footer className="px-5 grid grid-cols-[1fr_auto] items-center bg-surface-highlight py-2 border-t border-border-subtle">
+      <footer className="px-5 grid grid-cols-[1fr_auto] items-center bg-surface py-3 border-t border-border-subtle">
         <div>
-          <Link href="https://yaak.app/button/new" noUnderline className="text-text-subtle">
+          <Link href="https://yaak.app/button/new" noUnderline className="text-text-subtlest">
             Create Run Button
           </Link>
         </div>

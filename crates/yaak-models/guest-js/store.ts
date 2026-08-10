@@ -1,12 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { resolvedModelName } from "@yaakapp/yaak-client/lib/resolvedModelName";
 import { AnyModel, ModelPayload } from "../bindings/gen_models";
 import { modelStoreDataAtom } from "./atoms";
 import { ExtractModel, JotaiStore, ModelStoreData } from "./types";
 import { newStoreData } from "./util";
 
 let _store: JotaiStore | null = null;
+
+const pendingModelWrites = new Set<Promise<unknown>>();
 
 export function initModelStore(store: JotaiStore) {
   _store = store;
@@ -40,6 +41,23 @@ function mustStore(): JotaiStore {
   }
 
   return _store;
+}
+
+function trackModelWrite<T>(write: Promise<T>): Promise<T> {
+  const tracked = write.finally(() => {
+    pendingModelWrites.delete(tracked);
+  });
+
+  pendingModelWrites.add(tracked);
+  return tracked;
+}
+
+export async function flushAllModelWrites(): Promise<void> {
+  const results = await Promise.allSettled(pendingModelWrites);
+  const rejected = results.find((result) => result.status === "rejected");
+  if (rejected?.status === "rejected") {
+    throw rejected.reason;
+  }
 }
 
 let _activeWorkspaceId: string | null = null;
@@ -117,7 +135,7 @@ export async function patchModel<M extends AnyModel["model"], T extends ExtractM
 export async function updateModel<M extends AnyModel["model"], T extends ExtractModel<AnyModel, M>>(
   model: T,
 ): Promise<string> {
-  return invoke<string>("models_upsert", { model });
+  return trackModelWrite(invoke<string>("models_upsert", { model }));
 }
 
 export async function deleteModelById<
@@ -134,59 +152,37 @@ export async function deleteModel<M extends AnyModel["model"], T extends Extract
   if (model == null) {
     throw new Error("Failed to delete null model");
   }
-  await invoke<string>("models_delete", { model });
+  await trackModelWrite(invoke<string>("models_delete", { model }));
 }
 
-export function duplicateModel<M extends AnyModel["model"], T extends ExtractModel<AnyModel, M>>(
-  model: T | null,
-) {
+export async function duplicateModel<
+  M extends AnyModel["model"],
+  T extends ExtractModel<AnyModel, M>,
+>(model: T | null): Promise<string> {
   if (model == null) {
     throw new Error("Failed to duplicate null model");
   }
 
-  // If the model has an explicit (non-empty) name, try to duplicate it with a name that doesn't conflict.
-  // When the name is empty, keep it empty so the display falls back to the URL.
-  let name = "name" in model ? model.name : undefined;
-  if (name) {
-    const existingModels = listModels(model.model);
-    for (let i = 0; i < 100; i++) {
-      const hasConflict = existingModels.some((m) => {
-        if ("folderId" in m && "folderId" in model && model.folderId !== m.folderId) {
-          return false;
-        } else if (resolvedModelName(m) !== name) {
-          return false;
-        }
-        return true;
-      });
-      if (!hasConflict) {
-        break;
-      }
+  // Flush pending writes first, since the backend duplicates from the DB (the passed-in
+  // model may be a stale snapshot, eg. from the memoized sidebar tree). Conflict-free
+  // naming ("Foo Copy 2") is also handled by the backend.
+  await flushAllModelWrites();
 
-      // Name conflict. Try another one
-      const m: RegExpMatchArray | null = name.match(/ Copy( (?<n>\d+))?$/);
-      if (m != null && m.groups?.n == null) {
-        name = name.substring(0, m.index) + " Copy 2";
-      } else if (m != null && m.groups?.n != null) {
-        name = name.substring(0, m.index) + ` Copy ${parseInt(m.groups.n) + 1}`;
-      } else {
-        name = `${name} Copy`;
-      }
-    }
-  }
-
-  return invoke<string>("models_duplicate", { model: { ...model, name } });
+  return trackModelWrite(
+    invoke<string>("models_duplicate", { modelType: model.model, modelId: model.id }),
+  );
 }
 
 export async function createGlobalModel<T extends Exclude<AnyModel, { workspaceId: string }>>(
   patch: Partial<T> & Pick<T, "model">,
 ): Promise<string> {
-  return invoke<string>("models_upsert", { model: patch });
+  return trackModelWrite(invoke<string>("models_upsert", { model: patch }));
 }
 
 export async function createWorkspaceModel<T extends Extract<AnyModel, { workspaceId: string }>>(
   patch: Partial<T> & Pick<T, "model" | "workspaceId">,
 ): Promise<string> {
-  return invoke<string>("models_upsert", { model: patch });
+  return trackModelWrite(invoke<string>("models_upsert", { model: patch }));
 }
 
 export function replaceModelsInStore<

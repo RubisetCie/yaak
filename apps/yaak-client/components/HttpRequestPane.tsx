@@ -19,6 +19,8 @@ import { useSendAnyHttpRequest } from "../hooks/useSendAnyHttpRequest";
 import { deepEqualAtom } from "../lib/atoms";
 import { languageFromContentType } from "../lib/contentType";
 import { generateId } from "../lib/generateId";
+import { extractPathPlaceholders } from "../lib/pathPlaceholders";
+import { convertRequestBody } from "../lib/requestBodyConversion";
 import {
   BODY_TYPE_BINARY,
   BODY_TYPE_FORM_MULTIPART,
@@ -37,6 +39,7 @@ import { BinaryFileEditor } from "./BinaryFileEditor";
 import { ConfirmLargeRequestBody } from "./ConfirmLargeRequestBody";
 import { CountBadge } from "./core/CountBadge";
 import type { GenericCompletionConfig } from "./core/Editor/genericCompletion";
+import { getUrlCompletionConfig } from "./core/Editor/url/completion";
 import { Editor } from "./core/Editor/LazyEditor";
 import { InlineCode } from "@yaakapp-internal/ui";
 import type { Pair } from "./core/PairEditor";
@@ -131,9 +134,7 @@ export function HttpRequestPane({ style, fullHeight, className, activeRequest }:
   );
 
   const { urlParameterPairs, urlParametersKey } = useMemo(() => {
-    const placeholderNames = Array.from(activeRequest.url.matchAll(/\/(:[^/]+)/g)).map(
-      (m) => m[1] ?? "",
-    );
+    const placeholderNames = extractPathPlaceholders(activeRequest.url);
     const nonEmptyParameters = activeRequest.urlParameters.filter((p) => p.name || p.value);
     const items: Pair[] = [...nonEmptyParameters];
     for (const name of placeholderNames) {
@@ -196,7 +197,14 @@ export function HttpRequestPane({ style, fullHeight, className, activeRequest }:
               });
             };
 
-            const patch: Partial<HttpRequest> = { bodyType };
+            const patch: Partial<HttpRequest> = {
+              bodyType,
+              body: convertRequestBody({
+                body: activeRequest.body,
+                fromBodyType: activeRequest.bodyType,
+                toBodyType: bodyType,
+              }),
+            };
             let newContentType: string | null | undefined;
             if (bodyType === BODY_TYPE_NONE) {
               newContentType = null;
@@ -278,16 +286,7 @@ export function HttpRequestPane({ style, fullHeight, className, activeRequest }:
   const autocompleteUrls = useAtomValue(memoNotActiveRequestUrlsAtom);
 
   const autocomplete: GenericCompletionConfig = useMemo(
-    () => ({
-      minMatch: 3,
-      options:
-        autocompleteUrls.length > 0
-          ? autocompleteUrls
-          : [
-              { label: "http://", type: "constant" },
-              { label: "https://", type: "constant" },
-            ],
-    }),
+    () => getUrlCompletionConfig(autocompleteUrls),
     [autocompleteUrls],
   );
 
@@ -347,7 +346,7 @@ export function HttpRequestPane({ style, fullHeight, className, activeRequest }:
             onUrlChange={handleUrlChange}
             leftSlot={
               <div className="py-0.5">
-                <RequestMethodDropdown request={activeRequest} className="ml-0.5 !h-full" />
+                <RequestMethodDropdown request={activeRequest} className="ml-0.5 h-full!" />
               </div>
             }
             forceUpdateKey={updateKey}
@@ -457,7 +456,7 @@ export function HttpRequestPane({ style, fullHeight, className, activeRequest }:
                   hideLabel
                   forceUpdateKey={updateKey}
                   defaultValue={activeRequest.name}
-                  className="font-sans !text-xl !px-0"
+                  className="font-sans text-xl! px-0!"
                   containerClassName="border-0"
                   placeholder={resolvedModelName(activeRequest)}
                   onChange={(name) => patchModel(activeRequest, { name })}

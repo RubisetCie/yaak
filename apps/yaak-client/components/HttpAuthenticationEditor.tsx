@@ -10,14 +10,17 @@ import { HStack, Icon, InlineCode } from "@yaakapp-internal/ui";
 import { useCallback } from "react";
 import { openFolderSettings } from "../commands/openFolderSettings";
 import { openWorkspaceSettings } from "../commands/openWorkspaceSettings";
+import { useAuthDropdownOptions } from "../hooks/useAuthTab";
 import { useHttpAuthenticationConfig } from "../hooks/useHttpAuthenticationConfig";
 import { useInheritedAuthentication } from "../hooks/useInheritedAuthentication";
 import { useRenderTemplate } from "../hooks/useRenderTemplate";
 import { resolvedModelName } from "../lib/resolvedModelName";
+import { Button } from "./core/Button";
 import { Dropdown, type DropdownItem } from "./core/Dropdown";
 import { IconButton } from "./core/IconButton";
 import { Input, type InputProps } from "./core/Input";
 import { Link } from "./core/Link";
+import { RadioDropdown } from "./core/RadioDropdown";
 import { SegmentedControl } from "./core/SegmentedControl";
 import { DynamicForm } from "./DynamicForm";
 import { EmptyStateText } from "./EmptyStateText";
@@ -56,11 +59,16 @@ export function HttpAuthenticationEditor({ model }: Props) {
   if (inheritedAuth == null) {
     if (model.model === "workspace" || model.model === "folder") {
       return (
-        <EmptyStateText className="flex-col gap-1">
-          <p>
-            Apply auth to all requests in <strong>{resolvedModelName(model)}</strong>
-          </p>
-          <Link href="https://yaak.app/docs/using-yaak/request-inheritance">Documentation</Link>
+        <EmptyStateText className="flex-col gap-3">
+          <div className="not-italic flex flex-col items-center gap-3 text-center">
+            <p className="max-w-md text-sm text-text-subtle">
+              Choose an auth method to apply it to all requests in{" "}
+              <strong className="font-semibold text-text-subtle">{resolvedModelName(model)}</strong>
+              .
+            </p>
+            <AuthenticationTypeDropdown model={model} />
+            <Link href="https://yaak.app/docs/using-yaak/request-inheritance">Documentation</Link>
+          </div>
         </EmptyStateText>
       );
     }
@@ -140,7 +148,7 @@ export function HttpAuthenticationEditor({ model }: Props) {
                 title="Authentication Actions"
                 icon="settings"
                 size="xs"
-                className="!text-secondary"
+                className="text-secondary!"
               />
             </Dropdown>
           )}
@@ -166,6 +174,31 @@ export function HttpAuthenticationEditor({ model }: Props) {
         onChange={handleChange}
       />
     </div>
+  );
+}
+
+function AuthenticationTypeDropdown({ model }: Props) {
+  const options = useAuthDropdownOptions(model);
+
+  if (options == null) return null;
+
+  return (
+    <RadioDropdown
+      items={options.items}
+      itemsAfter={options.itemsAfter}
+      itemsBefore={options.itemsBefore}
+      value={options.value}
+      onChange={options.onChange}
+    >
+      <Button
+        color="secondary"
+        variant="border"
+        size="sm"
+        rightSlot={<Icon icon="chevron_down" size="sm" className="text-text-subtle" />}
+      >
+        Select Auth
+      </Button>
+    </RadioDropdown>
   );
 }
 

@@ -7,6 +7,11 @@ on:
         description: Version tag
         default: "1.0.0"
         required: true
+      build_cef:
+        description: Build CEF versions
+        type: boolean
+        required: true
+        default: false
       unit_tests:
         description: Run unit tests
         type: boolean
@@ -24,41 +29,67 @@ jobs:
       matrix:
         include:
           - platform: "macos-latest" # for Arm-based Macs (M1 and above).
-            args: "--target aarch64-apple-darwin"
+            args: '--target aarch64-apple-darwin --config ./tauri.release.conf.json --config ''{"build":{"features":["wry"]}}'''
             yaak_arch: "arm64"
             os: "macos"
             name: "Mac OS ARM64"
+            runtime: "wry"
             targets: "aarch64-apple-darwin"
           - platform: "macos-latest" # for Intel-based Macs.
-            args: "--target x86_64-apple-darwin"
+            args: '--target x86_64-apple-darwin --config ./tauri.release.conf.json --config ''{"build":{"features":["wry"]}}'''
             yaak_arch: "x64"
             os: "macos"
             name: "Mac OS x64"
+            runtime: "wry"
             targets: "x86_64-apple-darwin"
           - platform: "ubuntu-22.04"
-            args: ""
+            args: '--config ./tauri.release.conf.json --config ''{"build":{"features":["wry"]}}'''
             yaak_arch: "x64"
             os: "ubuntu"
             name: "Linux x64"
+            runtime: "wry"
             targets: ""
           - platform: "ubuntu-22.04-arm"
-            args: ""
+            args: '--config ./tauri.release.conf.json --config ''{"build":{"features":["wry"]}}'''
             yaak_arch: "arm64"
             os: "ubuntu"
             name: "Linux ARM64"
+            runtime: "wry"
+            targets: ""
+          - platform: "ubuntu-22.04"
+            args: >-
+              --bundles deb
+              --config ./tauri.release.conf.json
+              --config '{"productName":"yaak-cef","mainBinaryName":"yaak-cef","identifier":"app.yaak.desktop.cef","build":{"features":["cef"]},"bundle":{"createUpdaterArtifacts":false}}'
+            yaak_arch: "x64"
+            os: "ubuntu"
+            name: "Linux x64 [CEF]"
+            runtime: "cef"
+            targets: ""
+          - platform: "ubuntu-22.04-arm"
+            args: >-
+              --bundles deb
+              --config ./tauri.release.conf.json
+              --config '{"productName":"yaak-cef","mainBinaryName":"yaak-cef","identifier":"app.yaak.desktop.cef","build":{"features":["cef"]},"bundle":{"createUpdaterArtifacts":false}}'
+            yaak_arch: "arm64"
+            os: "ubuntu"
+            name: "Linux ARM64 [CEF]"
+            runtime: "cef"
             targets: ""
           - platform: "windows-latest"
-            args: ""
+            args: '--config ./tauri.release.conf.json --config ''{"build":{"features":["wry"]}}'''
             yaak_arch: "x64"
             os: "windows"
             name: "Windows x64"
+            runtime: "wry"
             targets: ""
           # Windows ARM64
           - platform: "windows-latest"
-            args: "--target aarch64-pc-windows-msvc"
+            args: '--target aarch64-pc-windows-msvc --config ./tauri.release.conf.json --config ''{"build":{"features":["wry"]}}'''
             yaak_arch: "arm64"
             os: "windows"
             name: "Windows ARM64"
+            runtime: "wry"
             targets: "aarch64-pc-windows-msvc"
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 40
@@ -77,11 +108,18 @@ jobs:
         with:
           targets: ${{ matrix.targets }}
 
+      - name: Install CEF
+        if: github.event.inputs.unit_tests == 'true' && matrix.os == 'ubuntu' && matrix.runtime == 'cef'
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/tauri-cef
+          key: cef-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+
       - name: Install Dependencies
         if: matrix.os == 'ubuntu'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev xdg-utils
+          sudo apt-get install -y cmake ninja-build libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev xdg-utils
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -98,7 +136,7 @@ jobs:
         run: vp test
         if: ${{ github.event.inputs.unit_tests == 'true' }}
       - name: Run Rust Tests
-        run: cargo test --all --exclude yaak-cli
+        run: cargo test --all --exclude yaak-cli --features yaak-app-client/wry
         if: ${{ github.event.inputs.unit_tests == 'true' }}
 
       - name: Set Version
@@ -112,15 +150,32 @@ jobs:
           YAAK_TARGET_ARCH: ${{ matrix.yaak_arch }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tauriScript: "node ../../node_modules/@tauri-apps/cli/tauri.js"
           tagName: "v__VERSION__"
           releaseName: "Release __VERSION__"
           releaseBody: "Stable release of **Yaak** version __VERSION__"
           releaseDraft: true
           prerelease: false
           uploadPlainBinary: false
-          assetNamePattern: '[name]-[version]-[platform]-[arch][setup][ext]'
+          assetNamePattern: "[name]-[version]-[platform]-[arch][setup][ext]"
           projectPath: ./crates-tauri/yaak-app-client
-          args: "${{ matrix.args }} --config ./tauri.release.conf.json"
+          args: "${{ matrix.args }}"
+
+      - name: Build and upload CEF tarball from deb (Linux only)
+        if: github.event.inputs.unit_tests == 'true' && matrix.os == 'ubuntu' && matrix.runtime == 'cef'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          deb=$(find target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' | head -n 1)
+          version="${GITHUB_REF_NAME#v}"
+          extract_dir="target/release/bundle/deb/yaak-cef-linux-${{ matrix.yaak_arch }}"
+          tarball="target/release/bundle/deb/yaak-cef_${version}_linux_${{ matrix.yaak_arch }}.tar.gz"
+          rm -rf "$extract_dir"
+          mkdir -p "$extract_dir"
+          dpkg-deb -x "$deb" "$extract_dir"
+          tar -C "$extract_dir" -czf "$tarball" .
+          gh release upload "${{ github.ref_name }}" "$tarball" --clobber
 
       # Build a per-machine NSIS installer for enterprise deployment (PDQ, SCCM, Intune)
       - name: Build Installer (Windows only)
@@ -135,7 +190,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         run: |
-          npx tauri bundle ${{ matrix.args }} --bundles nsis --config ./tauri.release.conf.json --config '{"bundle":{"createUpdaterArtifacts":false,"windows":{"nsis":{"installMode":"perMachine"}}}}'
+          Pop-Location
+          npx tauri bundle ${{ matrix.args }} --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false,"windows":{"nsis":{"installMode":"perMachine"}}}}'
           $setup = Get-ChildItem -Recurse -Path target -Filter "*setup*.exe" | Select-Object -First 1
           $dest = $setup.FullName -replace '-setup\.exe$', '-setup-machine.exe'
           $dest = $dest.Replace('_', '-')

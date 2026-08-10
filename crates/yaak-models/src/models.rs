@@ -21,6 +21,8 @@ use ts_rs::TS;
 use yaak_database::{Result as DbResult, UpdateSource};
 pub use yaak_database::{UpsertModelInfo, upsert_date};
 
+pub const DEFAULT_REQUEST_MESSAGE_SIZE: i32 = 64 * 1024 * 1024;
+
 #[macro_export]
 macro_rules! impl_model {
     ($t:ty, $variant:ident) => {
@@ -120,6 +122,7 @@ pub struct ResolvedHttpRequestSettings {
     pub validate_certificates: ResolvedSetting<bool>,
     pub follow_redirects: ResolvedSetting<bool>,
     pub request_timeout: ResolvedSetting<i32>,
+    pub request_message_size: ResolvedSetting<i32>,
     pub send_cookies: ResolvedSetting<bool>,
     pub store_cookies: ResolvedSetting<bool>,
 }
@@ -130,6 +133,7 @@ impl Default for ResolvedHttpRequestSettings {
             validate_certificates: ResolvedSetting::default_source(true),
             follow_redirects: ResolvedSetting::default_source(true),
             request_timeout: ResolvedSetting::default_source(0),
+            request_message_size: ResolvedSetting::default_source(DEFAULT_REQUEST_MESSAGE_SIZE),
             send_cookies: ResolvedSetting::default_source(true),
             store_cookies: ResolvedSetting::default_source(true),
         }
@@ -380,6 +384,8 @@ pub struct Workspace {
     #[serde(default = "default_true")]
     pub setting_follow_redirects: bool,
     pub setting_request_timeout: i32,
+    #[serde(default = "default_request_message_size")]
+    pub setting_request_message_size: i32,
     #[serde(default)]
     pub setting_dns_overrides: Vec<DnsOverride>,
     #[serde(default = "default_true")]
@@ -425,6 +431,7 @@ impl UpsertModelInfo for Workspace {
             (EncryptionKeyChallenge, self.encryption_key_challenge.into()),
             (SettingFollowRedirects, self.setting_follow_redirects.into()),
             (SettingRequestTimeout, self.setting_request_timeout.into()),
+            (SettingRequestMessageSize, self.setting_request_message_size.into()),
             (SettingValidateCertificates, self.setting_validate_certificates.into()),
             (SettingDnsOverrides, serde_json::to_string(&self.setting_dns_overrides)?.into()),
             (SettingSendCookies, self.setting_send_cookies.into()),
@@ -443,7 +450,7 @@ impl UpsertModelInfo for Workspace {
             WorkspaceIden::EncryptionKeyChallenge,
             WorkspaceIden::SettingRequestTimeout,
             WorkspaceIden::SettingFollowRedirects,
-            WorkspaceIden::SettingRequestTimeout,
+            WorkspaceIden::SettingRequestMessageSize,
             WorkspaceIden::SettingValidateCertificates,
             WorkspaceIden::SettingDnsOverrides,
             WorkspaceIden::SettingSendCookies,
@@ -471,6 +478,7 @@ impl UpsertModelInfo for Workspace {
             authentication_type: row.get("authentication_type")?,
             setting_follow_redirects: row.get("setting_follow_redirects")?,
             setting_request_timeout: row.get("setting_request_timeout")?,
+            setting_request_message_size: row.get("setting_request_message_size")?,
             setting_validate_certificates: row.get("setting_validate_certificates")?,
             setting_dns_overrides: serde_json::from_str(&setting_dns_overrides).unwrap_or_default(),
             setting_send_cookies: row.get("setting_send_cookies")?,
@@ -942,6 +950,8 @@ pub struct Folder {
     pub setting_validate_certificates: InheritedBoolSetting,
     pub setting_follow_redirects: InheritedBoolSetting,
     pub setting_request_timeout: InheritedIntSetting,
+    #[serde(default = "default_request_message_size_setting")]
+    pub setting_request_message_size: InheritedIntSetting,
 }
 
 impl UpsertModelInfo for Folder {
@@ -989,6 +999,10 @@ impl UpsertModelInfo for Folder {
             ),
             (SettingFollowRedirects, serde_json::to_string(&self.setting_follow_redirects)?.into()),
             (SettingRequestTimeout, serde_json::to_string(&self.setting_request_timeout)?.into()),
+            (
+                SettingRequestMessageSize,
+                serde_json::to_string(&self.setting_request_message_size)?.into(),
+            ),
         ])
     }
 
@@ -1007,6 +1021,7 @@ impl UpsertModelInfo for Folder {
             FolderIden::SettingValidateCertificates,
             FolderIden::SettingFollowRedirects,
             FolderIden::SettingRequestTimeout,
+            FolderIden::SettingRequestMessageSize,
         ]
     }
 
@@ -1021,6 +1036,7 @@ impl UpsertModelInfo for Folder {
         let setting_validate_certificates: String = row.get("setting_validate_certificates")?;
         let setting_follow_redirects: String = row.get("setting_follow_redirects")?;
         let setting_request_timeout: String = row.get("setting_request_timeout")?;
+        let setting_request_message_size: String = row.get("setting_request_message_size")?;
         Ok(Self {
             id: row.get("id")?,
             model: row.get("model")?,
@@ -1042,6 +1058,8 @@ impl UpsertModelInfo for Folder {
                 .unwrap_or_default(),
             setting_request_timeout: serde_json::from_str(&setting_request_timeout)
                 .unwrap_or_default(),
+            setting_request_message_size: serde_json::from_str(&setting_request_message_size)
+                .unwrap_or_else(|_| default_request_message_size_setting()),
         })
     }
 }
@@ -1378,6 +1396,8 @@ pub struct WebsocketRequest {
     pub setting_send_cookies: InheritedBoolSetting,
     pub setting_store_cookies: InheritedBoolSetting,
     pub setting_validate_certificates: InheritedBoolSetting,
+    #[serde(default = "default_request_message_size_setting")]
+    pub setting_request_message_size: InheritedIntSetting,
 }
 
 impl UpsertModelInfo for WebsocketRequest {
@@ -1426,6 +1446,10 @@ impl UpsertModelInfo for WebsocketRequest {
                 SettingValidateCertificates,
                 serde_json::to_string(&self.setting_validate_certificates)?.into(),
             ),
+            (
+                SettingRequestMessageSize,
+                serde_json::to_string(&self.setting_request_message_size)?.into(),
+            ),
         ])
     }
 
@@ -1446,6 +1470,7 @@ impl UpsertModelInfo for WebsocketRequest {
             WebsocketRequestIden::SettingSendCookies,
             WebsocketRequestIden::SettingStoreCookies,
             WebsocketRequestIden::SettingValidateCertificates,
+            WebsocketRequestIden::SettingRequestMessageSize,
         ]
     }
 
@@ -1459,6 +1484,7 @@ impl UpsertModelInfo for WebsocketRequest {
         let setting_send_cookies: String = row.get("setting_send_cookies")?;
         let setting_store_cookies: String = row.get("setting_store_cookies")?;
         let setting_validate_certificates: String = row.get("setting_validate_certificates")?;
+        let setting_request_message_size: String = row.get("setting_request_message_size")?;
         Ok(Self {
             id: row.get("id")?,
             model: row.get("model")?,
@@ -1479,6 +1505,8 @@ impl UpsertModelInfo for WebsocketRequest {
             setting_store_cookies: serde_json::from_str(&setting_store_cookies).unwrap_or_default(),
             setting_validate_certificates: serde_json::from_str(&setting_validate_certificates)
                 .unwrap_or_default(),
+            setting_request_message_size: serde_json::from_str(&setting_request_message_size)
+                .unwrap_or_else(|_| default_request_message_size_setting()),
         })
     }
 }
@@ -1489,6 +1517,7 @@ impl UpsertModelInfo for WebsocketRequest {
 pub enum WebsocketEventType {
     Binary,
     Close,
+    Error,
     Frame,
     Open,
     Ping,
@@ -2019,6 +2048,8 @@ pub struct GrpcRequest {
     /// Server URL (http for plaintext or https for secure)
     pub url: String,
     pub setting_validate_certificates: InheritedBoolSetting,
+    #[serde(default = "default_request_message_size_setting")]
+    pub setting_request_message_size: InheritedIntSetting,
 }
 
 impl UpsertModelInfo for GrpcRequest {
@@ -2066,6 +2097,10 @@ impl UpsertModelInfo for GrpcRequest {
                 SettingValidateCertificates,
                 serde_json::to_string(&self.setting_validate_certificates)?.into(),
             ),
+            (
+                SettingRequestMessageSize,
+                serde_json::to_string(&self.setting_request_message_size)?.into(),
+            ),
         ])
     }
 
@@ -2085,6 +2120,7 @@ impl UpsertModelInfo for GrpcRequest {
             GrpcRequestIden::Authentication,
             GrpcRequestIden::Metadata,
             GrpcRequestIden::SettingValidateCertificates,
+            GrpcRequestIden::SettingRequestMessageSize,
         ]
     }
 
@@ -2095,6 +2131,7 @@ impl UpsertModelInfo for GrpcRequest {
         let authentication: String = row.get("authentication")?;
         let metadata: String = row.get("metadata")?;
         let setting_validate_certificates: String = row.get("setting_validate_certificates")?;
+        let setting_request_message_size: String = row.get("setting_request_message_size")?;
         Ok(Self {
             id: row.get("id")?,
             model: row.get("model")?,
@@ -2114,6 +2151,8 @@ impl UpsertModelInfo for GrpcRequest {
             metadata: serde_json::from_str(metadata.as_str()).unwrap_or_default(),
             setting_validate_certificates: serde_json::from_str(&setting_validate_certificates)
                 .unwrap_or_default(),
+            setting_request_message_size: serde_json::from_str(&setting_request_message_size)
+                .unwrap_or_else(|_| default_request_message_size_setting()),
         })
     }
 }
@@ -2662,6 +2701,14 @@ impl<'s> TryFrom<&Row<'s>> for PluginKeyValue {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_request_message_size() -> i32 {
+    DEFAULT_REQUEST_MESSAGE_SIZE
+}
+
+fn default_request_message_size_setting() -> InheritedIntSetting {
+    InheritedIntSetting { enabled: false, value: DEFAULT_REQUEST_MESSAGE_SIZE }
 }
 
 fn default_http_method() -> String {

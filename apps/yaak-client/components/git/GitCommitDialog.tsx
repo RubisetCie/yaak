@@ -8,7 +8,7 @@ import type {
   WebsocketRequest,
   Workspace,
 } from "@yaakapp-internal/models";
-import { Banner, HStack, Icon, IconButton, InlineCode, SplitLayout } from "@yaakapp-internal/ui";
+import { Banner, HStack, Icon, InlineCode, SplitLayout } from "@yaakapp-internal/ui";
 import classNames from "classnames";
 import { useCallback, useMemo, useState } from "react";
 import { modelToYaml } from "../../lib/diffYaml";
@@ -41,10 +41,7 @@ interface CommitTreeNode {
 
 export function GitCommitDialog({ syncDir, onDone, workspace }: Props) {
   const callbacks = useGitCallbacks(syncDir);
-  const [{ status }, { commit, commitAndPush, add, unstage, restore }] = useGit(
-    syncDir,
-    callbacks,
-  );
+  const [{ status }, { commit, commitAndPush, add, unstage, restore }] = useGit(syncDir, callbacks);
   const [isPushing, setIsPushing] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [message, setMessage] = useState<string>("");
@@ -205,8 +202,9 @@ export function GitCommitDialog({ syncDir, onDone, workspace }: Props) {
         layout="horizontal"
         defaultRatio={0.6}
         firstSlot={({ style }) => (
-          <div style={style} className="h-full px-4">
+          <div style={style} className="h-full px-4 flex flex-col gap-3">
             <SplitLayout
+              className="min-h-0 flex-1"
               storageKey="commit-vertical"
               layout="vertical"
               defaultRatio={0.35}
@@ -224,11 +222,12 @@ export function GitCommitDialog({ syncDir, onDone, workspace }: Props) {
                   />
                   {externalEntries.find((e) => e.status !== "current") && (
                     <>
-                      <Separator className="mt-3 mb-1">External file changes</Separator>
+                      <Separator className="mt-3 mb-1">Other files</Separator>
                       {externalEntries.map((entry) => (
                         <ExternalTreeNode
                           key={entry.relaPath + entry.status}
                           entry={entry}
+                          relaDir={status.data?.relaDir ?? ""}
                           onCheck={checkEntry}
                         />
                       ))}
@@ -239,7 +238,7 @@ export function GitCommitDialog({ syncDir, onDone, workspace }: Props) {
               secondSlot={({ style: innerStyle }) => (
                 <div style={innerStyle} className="grid grid-rows-[minmax(0,1fr)_auto] gap-3 pb-2">
                   <Input
-                    className="!text-base font-sans rounded-md"
+                    className="text-base! font-sans rounded-md"
                     placeholder="Commit message..."
                     onChange={setMessage}
                     stateKey={null}
@@ -323,7 +322,7 @@ function TreeNodeChildren({
         )}
       >
         {isSelected && (
-          <div className="absolute -left-[100vw] right-0 top-0 bottom-0 bg-surface-active opacity-30 -z-10" />
+          <div className="absolute left-[-100vw] right-0 top-0 bottom-0 bg-surface-active opacity-30 -z-10" />
         )}
         <Checkbox
           checked={checked}
@@ -356,7 +355,7 @@ function TreeNodeChildren({
           {node.status.status !== "current" && (
             <InlineCode
               className={classNames(
-                "py-0 bg-transparent w-[6rem] text-center shrink-0",
+                "py-0 bg-transparent w-24 text-center shrink-0",
                 node.status.status === "modified" && "text-info",
                 node.status.status === "untracked" && "text-success",
                 node.status.status === "removed" && "text-danger",
@@ -386,28 +385,35 @@ function TreeNodeChildren({
 
 function ExternalTreeNode({
   entry,
+  relaDir,
   onCheck,
 }: {
   entry: GitStatusEntry;
+  relaDir: string;
   onCheck: (entry: GitStatusEntry) => void;
 }) {
   if (entry.status === "current") {
     return null;
   }
 
+  // Show paths relative to the sync directory when inside it
+  const displayPath = entry.relaPath.startsWith(`${relaDir}/`)
+    ? entry.relaPath.slice(relaDir.length + 1)
+    : entry.relaPath;
+
   return (
     <Checkbox
       fullWidth
-      className="h-xs w-full hover:bg-surface-highlight rounded px-1 group"
+      className="h-xs w-full hover:bg-surface-highlight rounded-sm px-1 group"
       checked={entry.staged}
       onChange={() => onCheck(entry)}
       title={
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-1 w-full items-center">
           <Icon color="secondary" icon="file_code" />
-          <div className="truncate">{entry.relaPath}</div>
+          <div className="truncate">{displayPath}</div>
           <InlineCode
             className={classNames(
-              "py-0 ml-auto bg-transparent w-[6rem] text-center",
+              "py-0 ml-auto bg-transparent w-24 text-center",
               entry.status === "modified" && "text-info",
               entry.status === "untracked" && "text-success",
               entry.status === "removed" && "text-danger",
@@ -509,13 +515,11 @@ function DiffPanel({
           size="2xs"
           variant="border"
           onClick={() => onDiscardChanges(entry)}
-        >Discard Changes</Button>
+        >
+          Discard Changes
+        </Button>
       </div>
-      <DiffViewer
-        original={prevYaml ?? ""}
-        modified={nextYaml ?? ""}
-        className="flex-1 min-h-0"
-      />
+      <DiffViewer original={prevYaml ?? ""} modified={nextYaml ?? ""} className="flex-1 min-h-0" />
     </div>
   );
 }

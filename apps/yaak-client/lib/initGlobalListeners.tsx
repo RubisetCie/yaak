@@ -1,5 +1,4 @@
 import { emit } from "@tauri-apps/api/event";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { debounce } from "@yaakapp-internal/lib";
 import type {
   FormInput,
@@ -7,17 +6,12 @@ import type {
   JsonPrimitive,
   ShowToastRequest,
 } from "@yaakapp-internal/plugins";
-import { HStack, Icon, VStack } from "@yaakapp-internal/ui";
 import { openSettings } from "../commands/openSettings";
 import { Button } from "../components/core/Button";
-import { ButtonInfiniteLoading } from "../components/core/ButtonInfiniteLoading";
 
 // Listen for toasts
 import { listenToTauriEvent } from "../hooks/useListenToTauriEvent";
-import { updateAvailableAtom } from "./atoms";
-import { stringToColor } from "./color";
 import { generateId } from "./generateId";
-import { jotaiStore } from "./jotai";
 import { showPrompt } from "./prompt";
 import { showPromptForm } from "./prompt-form";
 import { invokeCmd } from "./tauri";
@@ -37,6 +31,19 @@ export function initGlobalListeners() {
         color: "danger",
         timeout: null,
         message: `Failed to load plugin "${name}": ${err}`,
+        action: ({ hide }) => (
+          <Button
+            size="xs"
+            color="danger"
+            variant="border"
+            onClick={() => {
+              hide();
+              openSettings.mutate("plugins:installed");
+            }}
+          >
+            Manage Plugins
+          </Button>
+        ),
       });
     }
   });

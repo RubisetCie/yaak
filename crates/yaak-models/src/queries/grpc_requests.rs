@@ -1,4 +1,4 @@
-use super::dedupe_headers;
+use super::{conflict_free_name, dedupe_headers};
 use crate::client_db::ClientDb;
 use crate::error::Result;
 use crate::models::{
@@ -58,6 +58,13 @@ impl<'a> ClientDb<'a> {
         let mut request = grpc_request.clone();
         request.id = "".to_string();
         request.sort_priority = request.sort_priority + 0.001;
+        let sibling_names = self
+            .list_grpc_requests(&request.workspace_id)?
+            .into_iter()
+            .filter(|m| m.folder_id == request.folder_id)
+            .map(|m| m.name)
+            .collect::<Vec<_>>();
+        request.name = conflict_free_name(&request.name, &sibling_names);
         self.upsert(&request, source)
     }
 
@@ -128,6 +135,14 @@ impl<'a> ClientDb<'a> {
                 )
             } else {
                 parent.validate_certificates
+            },
+            request_message_size: if grpc_request.setting_request_message_size.enabled {
+                ResolvedSetting::from_model(
+                    grpc_request.setting_request_message_size.value,
+                    AnyModel::GrpcRequest(grpc_request.clone()),
+                )
+            } else {
+                parent.request_message_size
             },
             ..parent
         })

@@ -2,7 +2,6 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useRef } from "react";
 import { openSettings } from "../commands/openSettings";
 import { useExportData } from "../hooks/useExportData";
-import { appInfo } from "../lib/appInfo";
 import { showDialog } from "../lib/dialog";
 import { importData } from "../lib/importData";
 import type { DropdownRef } from "./core/Dropdown";

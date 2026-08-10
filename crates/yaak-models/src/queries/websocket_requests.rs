@@ -1,4 +1,4 @@
-use super::dedupe_headers;
+use super::{conflict_free_name, dedupe_headers};
 use crate::client_db::ClientDb;
 use crate::error::Result;
 use crate::models::{
@@ -60,6 +60,13 @@ impl<'a> ClientDb<'a> {
         let mut websocket_request = websocket_request.clone();
         websocket_request.id = "".to_string();
         websocket_request.sort_priority = websocket_request.sort_priority + 0.001;
+        let sibling_names = self
+            .list_websocket_requests(&websocket_request.workspace_id)?
+            .into_iter()
+            .filter(|m| m.folder_id == websocket_request.folder_id)
+            .map(|m| m.name)
+            .collect::<Vec<_>>();
+        websocket_request.name = conflict_free_name(&websocket_request.name, &sibling_names);
         self.upsert(&websocket_request, source)
     }
 
@@ -138,6 +145,14 @@ impl<'a> ClientDb<'a> {
                 )
             } else {
                 parent.validate_certificates
+            },
+            request_message_size: if websocket_request.setting_request_message_size.enabled {
+                ResolvedSetting::from_model(
+                    websocket_request.setting_request_message_size.value,
+                    AnyModel::WebsocketRequest(websocket_request.clone()),
+                )
+            } else {
+                parent.request_message_size
             },
             send_cookies: if websocket_request.setting_send_cookies.enabled {
                 ResolvedSetting::from_model(

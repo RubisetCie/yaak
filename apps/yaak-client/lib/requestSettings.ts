@@ -5,6 +5,7 @@ type ModelType = AnyModel["model"];
 type WorkspaceRequestSettings = Pick<
   Workspace,
   | "settingFollowRedirects"
+  | "settingRequestMessageSize"
   | "settingRequestTimeout"
   | "settingSendCookies"
   | "settingStoreCookies"
@@ -39,6 +40,14 @@ export const SETTING_REQUEST_TIMEOUT = defineRequestSetting({
   modelKey: "settingRequestTimeout",
   models: ["workspace", "folder", "http_request"],
   title: "Request Timeout",
+});
+
+export const SETTING_REQUEST_MESSAGE_SIZE = defineRequestSetting({
+  defaultValue: 64 * 1024 * 1024,
+  description: "Maximum gRPC or WebSocket message size in MB. Set to 0 to disable.",
+  modelKey: "settingRequestMessageSize",
+  models: ["workspace", "folder", "websocket_request", "grpc_request"],
+  title: "Message Size Limit",
 });
 
 export const SETTING_VALIDATE_CERTIFICATES = defineRequestSetting({

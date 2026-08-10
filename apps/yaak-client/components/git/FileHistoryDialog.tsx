@@ -1,6 +1,6 @@
 import { useGitFileDiffForCommit, useGitLog, useGitMutations } from "@yaakapp-internal/git";
 import type { GitCommit } from "@yaakapp-internal/git";
-import { InlineCode, SplitLayout } from "@yaakapp-internal/ui";
+import { SplitLayout } from "@yaakapp-internal/ui";
 import classNames from "classnames";
 import { formatDistanceToNowStrict } from "date-fns";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -117,14 +117,17 @@ function CommitListItem({
     <button
       type="button"
       className={classNames(
-        "w-full min-w-0 text-left rounded px-2 py-1.5",
+        "w-full min-w-0 text-left rounded-sm px-2 py-1.5",
         selected && "bg-surface-active",
       )}
       onClick={onSelect}
     >
       <div className="truncate flex-1">{commit.message || "No message"}</div>
       <div className="text-text-subtle text-sm truncate">
-        {commit.author.name || "Unknown"} - {formatDistanceToNowStrict(commit.when)} ago - <span className="shrink-0 text-2xs text-text-subtle font-mono">{commit.oid.slice(0, 7)}</span>
+        {commit.author.name || "Unknown"} - {formatDistanceToNowStrict(commit.when)} ago -{" "}
+        <span className="shrink-0 text-2xs text-text-subtle font-mono">
+          {commit.oid.slice(0, 7)}
+        </span>
       </div>
     </button>
   );

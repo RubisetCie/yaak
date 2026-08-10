@@ -511,7 +511,10 @@ pub async fn send_http_request<T: TemplateCallback>(
             .map_err(SendHttpRequestError::PrepareSendableRequest)?;
     }
 
-    let request_content_length = sendable_body_length(sendable_request.body.as_ref());
+    let request_content_length = match sendable_request.body.as_ref() {
+        Some(SendableBody::Bytes(_)) => sendable_body_length(sendable_request.body.as_ref()),
+        Some(SendableBody::Stream { .. }) | None => None,
+    };
     let mut response = params.existing_response.unwrap_or_default();
     response.request_id = params.request.id.clone();
     response.workspace_id = params.request.workspace_id.clone();
@@ -684,6 +687,7 @@ pub async fn send_http_request<T: TemplateCallback>(
         }
     })?;
     let body_path = params.response_dir.join(&response.id);
+    let response_body_path = body_path.to_string_lossy().to_string();
     let connected_response = HttpResponse {
         state: HttpResponseState::Connected,
         elapsed_headers: headers_elapsed,
@@ -693,7 +697,7 @@ pub async fn send_http_request<T: TemplateCallback>(
         remote_addr: http_response.remote_addr.clone(),
         version: http_response.version.clone(),
         elapsed_dns: dns_elapsed.load(Ordering::Relaxed),
-        body_path: Some(body_path.to_string_lossy().to_string()),
+        body_path: Some(response_body_path.clone()),
         content_length: http_response.content_length.map(u64_to_i32),
         headers: http_response
             .headers
@@ -724,6 +728,8 @@ pub async fn send_http_request<T: TemplateCallback>(
     let mut body_stream =
         http_response.into_body_stream().map_err(SendHttpRequestError::ReadResponseBody)?;
     let mut response_body = Vec::new();
+    let mut read_buf = vec![0; 64 * 1024];
+    let collect_response_body = !persist_response && params.emit_response_body_chunks_to.is_none();
     let mut body_read_error = None;
     let mut written_bytes: usize = 0;
     let mut last_progress_update = started_at;
@@ -740,12 +746,12 @@ pub async fn send_http_request<T: TemplateCallback>(
                 _ = cancelled_rx.changed() => {
                     None
                 }
-                result = body_stream.read_buf(&mut response_body) => {
+                result = body_stream.read(&mut read_buf) => {
                     Some(result)
                 }
             }
         } else {
-            Some(body_stream.read_buf(&mut response_body).await)
+            Some(body_stream.read(&mut read_buf).await)
         };
 
         let Some(read_result) = read_result else {
@@ -756,17 +762,14 @@ pub async fn send_http_request<T: TemplateCallback>(
             Ok(0) => break,
             Ok(n) => {
                 written_bytes += n;
-                let start_idx = response_body.len() - n;
-                let chunk = &response_body[start_idx..];
+                let chunk = &read_buf[..n];
                 file.write_all(chunk).await.map_err(|source| {
                     SendHttpRequestError::WriteResponseBody { path: body_path.clone(), source }
                 })?;
-                file.flush().await.map_err(|source| SendHttpRequestError::WriteResponseBody {
-                    path: body_path.clone(),
-                    source,
-                })?;
                 if let Some(tx) = params.emit_response_body_chunks_to.as_ref() {
                     let _ = tx.send(chunk.to_vec());
+                } else if collect_response_body {
+                    response_body.extend_from_slice(chunk);
                 }
 
                 let now = Instant::now();
@@ -811,25 +814,11 @@ pub async fn send_http_request<T: TemplateCallback>(
     })?;
     drop(body_stream);
 
-    if let Some(task) = request_body_capture_task.take() {
-        match task.await {
-            Ok(Ok(total)) => {
-                response.request_content_length = Some(usize_to_i32(total));
-            }
-            Ok(Err(err)) => request_body_capture_error = Some(err),
-            Err(err) => request_body_capture_error = Some(err.to_string()),
-        }
-    }
-
     if let Some(err) = request_body_capture_error.take() {
         response.error = Some(append_error_message(
             response.error.take(),
             format!("Request succeeded but failed to store request body: {err}"),
         ));
-    }
-
-    if let Err(join_err) = event_handle.await {
-        warn!("Failed to join response event task: {}", join_err);
     }
 
     if let Some(err) = body_read_error {
@@ -849,12 +838,22 @@ pub async fn send_http_request<T: TemplateCallback>(
             cookie_jar.as_mut(),
             cookie_behavior.store.as_ref(),
         )?;
+        if let Some(task) = request_body_capture_task.take() {
+            match task.await {
+                Ok(Ok(_)) => {}
+                Ok(Err(err)) => warn!("Failed to store request body after response error: {err}"),
+                Err(err) => warn!("Failed to join request body capture task: {err}"),
+            }
+        }
+        if let Err(join_err) = event_handle.await {
+            warn!("Failed to join response event task: {}", join_err);
+        }
         return Err(err);
     }
 
     let compressed_length = http_response.content_length.unwrap_or(written_bytes as u64);
     let final_response = HttpResponse {
-        body_path: Some(body_path.to_string_lossy().to_string()),
+        body_path: Some(response_body_path),
         content_length: Some(usize_to_i32(written_bytes)),
         content_length_compressed: Some(u64_to_i32(compressed_length)),
         elapsed: duration_to_i32(started_at.elapsed()),
@@ -874,6 +873,49 @@ pub async fn send_http_request<T: TemplateCallback>(
     }
 
     persist_cookie_jar(params.query_manager, cookie_jar.as_mut(), cookie_behavior.store.as_ref())?;
+
+    // Request-body history can be much larger than the response. It should not keep the
+    // response in a loading state after the network/response-body work has completed.
+    if let Some(task) = request_body_capture_task.take() {
+        let mut update_response = false;
+        match task.await {
+            Ok(Ok(total)) => {
+                let total = Some(usize_to_i32(total));
+                if response.request_content_length != total {
+                    response.request_content_length = total;
+                    update_response = true;
+                }
+            }
+            Ok(Err(err)) => {
+                response.error = Some(append_error_message(
+                    response.error.take(),
+                    format!("Request succeeded but failed to store request body: {err}"),
+                ));
+                update_response = true;
+            }
+            Err(err) => {
+                response.error = Some(append_error_message(
+                    response.error.take(),
+                    format!("Request succeeded but failed to store request body: {err}"),
+                ));
+                update_response = true;
+            }
+        }
+
+        if update_response && persist_response {
+            response = params
+                .query_manager
+                .connect()
+                .upsert_http_response(&response, &params.update_source, params.blob_manager)
+                .map_err(SendHttpRequestError::PersistResponse)?;
+        }
+    }
+
+    // Timeline events are useful history, but they should not keep the response in a loading state
+    // after the network/response-body work has completed.
+    if let Err(join_err) = event_handle.await {
+        warn!("Failed to join response event task: {}", join_err);
+    }
 
     Ok(SendHttpRequestResult { rendered_request, response, response_body })
 }
@@ -907,14 +949,24 @@ async fn persist_request_body_stream(
 ) -> std::result::Result<usize, String> {
     let mut chunk_index: i32 = 0;
     let mut total_bytes = 0usize;
+
+    // Stream reads arrive in small (eg. 8-16 KiB) pieces, so accumulate them into
+    // full-size chunks to avoid thousands of tiny inserts for large bodies
+    let mut buf: Vec<u8> = Vec::with_capacity(REQUEST_BODY_CHUNK_SIZE);
     while let Some(data) = rx.recv().await {
         total_bytes += data.len();
-        if data.is_empty() {
-            continue;
+        buf.extend_from_slice(&data);
+        while buf.len() >= REQUEST_BODY_CHUNK_SIZE {
+            let data = buf.drain(..REQUEST_BODY_CHUNK_SIZE).collect();
+            let chunk = BodyChunk::new(&body_id, chunk_index, data);
+            blob_manager.connect().insert_chunk(&chunk).map_err(|e| e.to_string())?;
+            chunk_index += 1;
         }
-        let chunk = BodyChunk::new(&body_id, chunk_index, data);
+    }
+
+    if !buf.is_empty() {
+        let chunk = BodyChunk::new(&body_id, chunk_index, buf);
         blob_manager.connect().insert_chunk(&chunk).map_err(|e| e.to_string())?;
-        chunk_index += 1;
     }
 
     Ok(total_bytes)

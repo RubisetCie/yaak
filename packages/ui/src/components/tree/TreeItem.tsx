@@ -20,6 +20,7 @@ import {
 } from "./context";
 import type { TreeNode } from "./common";
 import { getNodeKey } from "./common";
+import { isImeCompositionEvent } from "./keyboard";
 import type { TreeProps } from "./Tree";
 import { TreeIndentGuide } from "./TreeIndentGuide";
 
@@ -170,6 +171,8 @@ function TreeItem_<T extends { id: string }>({
   const handleEditKeyDown = useCallback(
     async (e: ReactKeyboardEvent<HTMLInputElement>) => {
       e.stopPropagation(); // Don't trigger other tree keys (like arrows)
+      if (isImeCompositionEvent(e.nativeEvent)) return;
+
       switch (e.key) {
         case "Enter":
           if (editing) {
@@ -326,7 +329,7 @@ function TreeItem_<T extends { id: string }>({
           <button
             type="button"
             tabIndex={-1}
-            className="h-full pl-[0.5rem] outline-none"
+            className="h-full pl-2 outline-hidden"
             onClick={toggleCollapsed}
           >
             <Icon
@@ -334,7 +337,7 @@ function TreeItem_<T extends { id: string }>({
               className={classNames(
                 "transition-transform text-text-subtlest",
                 "ml-auto",
-                "w-[1rem] h-[1rem]",
+                "w-4 h-4",
                 !isCollapsed && node.children.length > 0 && "rotate-90",
               )}
             />
@@ -349,7 +352,7 @@ function TreeItem_<T extends { id: string }>({
           onClick={handleClick}
           onDoubleClick={handleDoubleClick}
           disabled={editing}
-          className="cursor-default tree-item-inner pr-1 focus:outline-none flex items-center gap-2 h-full whitespace-nowrap"
+          className="cursor-default tree-item-inner pr-1 focus:outline-hidden flex items-center gap-2 h-full whitespace-nowrap"
           {...attributes}
           {...listeners}
           tabIndex={isLastSelected ? 0 : -1}
@@ -364,7 +367,9 @@ function TreeItem_<T extends { id: string }>({
                   ref={handleEditFocus}
                   defaultValue={defaultValue}
                   placeholder={placeholder}
-                  className="bg-transparent outline-none w-full cursor-text"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  className="bg-transparent outline-hidden w-full cursor-text"
                   onBlur={handleEditBlur}
                   onKeyDown={handleEditKeyDown}
                 />

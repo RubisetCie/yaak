@@ -6,7 +6,6 @@ import { HeaderSize, HStack, Icon } from "@yaakapp-internal/ui";
 import classNames from "classnames";
 import { useAtomValue } from "jotai";
 import { useKeyPressEvent } from "react-use";
-import { appInfo } from "../../lib/appInfo";
 import { capitalize } from "../../lib/capitalize";
 import { CountBadge } from "../core/CountBadge";
 import { TabContent, type TabItem, Tabs } from "../core/Tabs/Tabs";
@@ -88,7 +87,7 @@ export default function Settings({ hide }: Props) {
         layout="horizontal"
         defaultValue={mainTab || tabFromQuery}
         addBorders
-        tabListClassName="min-w-[10rem] bg-surface x-theme-sidebar border-r border-border pl-3"
+        tabListClassName="min-w-40 bg-surface x-theme-sidebar border-r border-border pl-3"
         label="Settings"
         tabs={tabs.map(
           (value): TabItem => ({
@@ -122,25 +121,25 @@ export default function Settings({ hide }: Props) {
           }),
         )}
       >
-        <TabContent value={TAB_GENERAL} className="overflow-y-auto h-full px-6 !py-4">
+        <TabContent value={TAB_GENERAL} className="overflow-y-auto h-full px-6 py-4!">
           <SettingsGeneral />
         </TabContent>
-        <TabContent value={TAB_INTERFACE} className="overflow-y-auto h-full px-6 !py-4">
+        <TabContent value={TAB_INTERFACE} className="overflow-y-auto h-full px-6 py-4!">
           <SettingsInterface />
         </TabContent>
-        <TabContent value={TAB_THEME} className="overflow-y-auto h-full px-6 !py-4">
+        <TabContent value={TAB_THEME} className="overflow-y-auto h-full px-6 py-4!">
           <SettingsTheme />
         </TabContent>
-        <TabContent value={TAB_SHORTCUTS} className="overflow-y-auto h-full px-6 !py-4">
+        <TabContent value={TAB_SHORTCUTS} className="overflow-y-auto h-full px-6 py-4!">
           <SettingsHotkeys />
         </TabContent>
         <TabContent value={TAB_PLUGINS} className="h-full grid grid-rows-1">
           <SettingsPlugins defaultSubtab={mainTab === TAB_PLUGINS ? subtab : undefined} />
         </TabContent>
-        <TabContent value={TAB_PROXY} className="overflow-y-auto h-full px-6 !py-4">
+        <TabContent value={TAB_PROXY} className="overflow-y-auto h-full px-6 py-4!">
           <SettingsProxy />
         </TabContent>
-        <TabContent value={TAB_CERTIFICATES} className="overflow-y-auto h-full px-6 !py-4">
+        <TabContent value={TAB_CERTIFICATES} className="overflow-y-auto h-full px-6 py-4!">
           <SettingsCertificates />
         </TabContent>
       </Tabs>

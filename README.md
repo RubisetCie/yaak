@@ -29,13 +29,11 @@ It’s fast, lightweight, and private. No telemetry, no VC funding, and no cloud
 
 ### Stay secure
 
-
 - Use OAuth 2.0, JWT, Basic Auth, or custom plugins for authentication.
 - Secure sensitive values with encrypted secrets.
 - Store secrets in your OS keychain.
 
 ### Organize & collaborate
-
 
 - Group requests into workspaces and nested folders.
 - Use environment variables to switch between dev, staging, and prod.
@@ -43,7 +41,21 @@ It’s fast, lightweight, and private. No telemetry, no VC funding, and no cloud
 
 ### Extend & customize
 
-
 - Insert dynamic values like UUIDs or timestamps with template tags.
 - Pick from built-in themes or build your own.
 - Create plugins to extend authentication, template tags, or the UI.
+
+## Contribution Policy
+
+> [!IMPORTANT]
+> Community PRs are currently limited to bug fixes.
+> If your PR is not a bug fix, link the [feedback item](https://yaak.app/feedback) where @gschier explicitly gave you permission to work on it.
+> See [`CONTRIBUTING.md`](CONTRIBUTING.md) for policy details and [`DEVELOPMENT.md`](DEVELOPMENT.md) for local setup.
+
+## Useful Resources
+
+- [Feedback and Bug Reports](https://feedback.yaak.app)
+- [Documentation](https://yaak.app/docs)
+- [Yaak vs Postman](https://yaak.app/alternatives/postman)
+- [Yaak vs Bruno](https://yaak.app/alternatives/bruno)
+- [Yaak vs Insomnia](https://yaak.app/alternatives/insomnia)

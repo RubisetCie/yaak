@@ -2,8 +2,7 @@
 export const url = 1,
   Protocol = 2,
   Host = 3,
-  Port = 4,
-  Path = 5,
+  Path = 4,
+  PathSegment = 5,
   Placeholder = 6,
-  PathSegment = 7,
-  Query = 8;
+  Query = 7;

@@ -105,20 +105,30 @@ function WebsocketEventRow({
     : "";
 
   const iconColor =
-    messageType === "close" || messageType === "open" ? "secondary" : isServer ? "info" : "primary";
+    messageType === "error"
+      ? "warning"
+      : messageType === "close" || messageType === "open"
+        ? "secondary"
+        : isServer
+          ? "info"
+          : "primary";
 
   const icon =
-    messageType === "close" || messageType === "open"
-      ? "info"
-      : isServer
-        ? "arrow_big_down_dash"
-        : "arrow_big_up_dash";
+    messageType === "error"
+      ? "alert_triangle"
+      : messageType === "close" || messageType === "open"
+        ? "info"
+        : isServer
+          ? "arrow_big_down_dash"
+          : "arrow_big_up_dash";
 
   const content =
     messageType === "close" ? (
       "Disconnected from server"
     ) : messageType === "open" ? (
       "Connected to server"
+    ) : messageType === "error" ? (
+      <span className="text-warning">{message}</span>
     ) : message === "" ? (
       <em className="italic text-text-subtlest">No content</em>
     ) : (
@@ -170,7 +180,9 @@ function WebsocketEventDetail({
       ? "Connection Closed"
       : event.messageType === "open"
         ? "Connection Open"
-        : `Message ${event.isServer ? "Received" : "Sent"}`;
+        : event.messageType === "error"
+          ? "WebSocket Error"
+          : `Message ${event.isServer ? "Received" : "Sent"}`;
 
   const actions: EventDetailAction[] =
     message !== ""
