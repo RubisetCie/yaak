@@ -8,6 +8,7 @@ import { emacs } from "@replit/codemirror-emacs";
 import { vim } from "@replit/codemirror-vim";
 
 import { vscodeKeymap } from "@replit/codemirror-vscode-keymap";
+import { debounce } from "@yaakapp-internal/lib";
 import type { EditorKeymap } from "@yaakapp-internal/models";
 import { settingsAtom } from "@yaakapp-internal/models";
 import type { EditorLanguage, TemplateFunction } from "@yaakapp-internal/plugins";
@@ -15,7 +16,6 @@ import { HStack } from "@yaakapp-internal/ui";
 import classNames from "classnames";
 import type { GraphQLSchema } from "graphql";
 import { useAtomValue } from "jotai";
-import { md5 } from "js-md5";
 import type { ReactNode, RefObject } from "react";
 import {
   Children,
@@ -33,6 +33,7 @@ import { useEnvironmentVariables } from "../../../hooks/useEnvironmentVariables"
 import { eventMatchesHotkey } from "../../../hooks/useHotKey";
 import { useRequestEditor } from "../../../hooks/useRequestEditor";
 import { useTemplateFunctionCompletionOptions } from "../../../hooks/useTemplateFunctions";
+import { docFingerprint } from "../../../lib/docFingerprint";
 import { editEnvironment } from "../../../lib/editEnvironment";
 import { tryFormatJson, tryFormatXml } from "../../../lib/formatters";
 import { jotaiStore } from "../../../lib/jotai";
@@ -42,6 +43,7 @@ import { IconButton } from "../IconButton";
 import "./Editor.css";
 import {
   baseExtensions,
+  editableExtensions,
   getLanguageExtension,
   multiLineExtensions,
   readonlyExtensions,
@@ -288,7 +290,7 @@ function EditorInner({
     function configureReadOnly() {
       if (cm.current === null) return;
       const current = readOnlyCompartment.current.get(cm.current.view.state) ?? emptyExtension;
-      const next = readOnly ? readonlyExtensions : emptyExtension;
+      const next = readOnly ? readonlyExtensions : editableExtensions;
       // PERF: This is expensive with hundreds of editors on screen, so only do it when necessary
       if (current === next) return;
 
@@ -381,6 +383,7 @@ function EditorInner({
   const initEditorRef = useCallback(
     function initEditorRef(container: HTMLDivElement | null) {
       if (container === null) {
+        flushCachedEditorState(stateKey);
         cm.current?.view.destroy();
         cm.current = null;
         return;
@@ -410,7 +413,7 @@ function EditorInner({
           keymapCompartment.current.of(
             keymapExtensions[settings.editorKeymap] ?? keymapExtensions.default,
           ),
-          readOnlyCompartment.current.of(readOnly ? readonlyExtensions : emptyExtension),
+          readOnlyCompartment.current.of(readOnly ? readonlyExtensions : editableExtensions),
           ...getExtensions({
             container,
             singleLine,
@@ -430,7 +433,7 @@ function EditorInner({
               : []),
         ];
 
-        const cachedJsonState = getCachedEditorState(defaultValue ?? "", stateKey);
+        const cachedJsonState = getCachedEditorState(defaultValue ?? "", stateKey, !!readOnly);
 
         const doc = `${defaultValue ?? ""}`;
         const config: EditorStateConfig = { extensions, doc };
@@ -439,7 +442,21 @@ function EditorInner({
           ? EditorState.fromJSON(cachedJsonState, config, stateFields)
           : EditorState.create(config);
 
-        const view = new EditorView({ state, parent: container });
+        // PERF: Built detached and attached in a microtask, rather than passing `parent` and
+        // letting the constructor attach it first.
+        //
+        // The constructor sets `contenteditable` on the content element and then reads
+        // `document.fonts.ready`. Both force the browser to flush style and layout when the
+        // element is already in the document, and whatever the previous editor attached has
+        // just dirtied it again — so mounting n editors in one commit costs n forced layouts.
+        // The environment editor mounts two per variable row (~60 of them), which is where its
+        // half-second open went.
+        //
+        // Building detached moves that work off the live document, and deferring the attach to
+        // a microtask means every editor in the commit is built before any of them is inserted:
+        // one forced layout for the batch instead of one each. The microtask still runs before
+        // paint, so nothing is visible in the meantime.
+        const view = new EditorView({ state });
 
         // For large documents, the parser may parse the max number of lines and fail to add
         // things like fold markers because of it.
@@ -447,12 +464,26 @@ function EditorInner({
         forceParsing(view, 9e6, 100);
 
         cm.current = { view, languageCompartment };
-        if (autoFocus) {
-          view.focus();
-        }
-        if (autoSelect) {
-          view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
-        }
+        queueMicrotask(() => {
+          // The editor was torn down (or replaced) before we got here
+          if (cm.current?.view !== view) return;
+
+          // Runs after the surrounding try/catch has returned, so it needs its own
+          try {
+            container.appendChild(view.dom);
+            // Everything the constructor measured, it measured detached
+            view.requestMeasure();
+
+            if (autoFocus) {
+              view.focus();
+            }
+            if (autoSelect) {
+              view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+            }
+          } catch (e) {
+            console.log("Failed to attach Codemirror", e);
+          }
+        });
         setRef?.(view);
       } catch (e) {
         console.log("Failed to initialize Codemirror", e);
@@ -598,6 +629,8 @@ function getExtensions({
     EditorView.contentAttributes.of({
       autocapitalize: "off",
       autocorrect: "off",
+      // Keeps macOS Writing Tools from offering to write code for us
+      writingsuggestions: "false",
     }),
     EditorView.domEventHandlers({
       focus: () => {
@@ -639,7 +672,7 @@ function getExtensions({
         onChange.current?.(update.state.doc.toString());
       }
 
-      saveCachedEditorState(stateKey, update.state);
+      saveCachedEditorStateDebounced(stateKey, update.state);
     }),
   ];
 }
@@ -652,13 +685,53 @@ const placeholderElFromText = (text: string | undefined) => {
   return el;
 };
 
+// Caching the state is too expensive to do on every update (every keystroke and cursor move),
+// so debounce it per state key and flush when the editor unmounts.
+//
+// The cost scales with the document, and every update pays it in full:
+//   - `state.toJSON` flattens the whole rope into a string, ~0.13 ms per 200 KB
+//   - the fingerprint is an exact md5 for editable documents, ~0.3 ms per 200 KB. `docFingerprint`
+//     only samples read-only ones, so editing a large body still hashes all of it
+//   - `sessionStorage.setItem` is synchronous and blocks the main thread
+// Typing in a 200 KB body costs ~0.4 ms per keystroke before the storage write, and a 1 MB one
+// ~2.3 ms. Read-only documents skip most of the hashing but still serialize, which is the larger
+// half once documents get into the megabytes.
+const SAVE_STATE_DEBOUNCE_MS = 500;
+const stateSavers = new Map<string, ReturnType<typeof debounce>>();
+
+function saveCachedEditorStateDebounced(stateKey: string | null, state: EditorState) {
+  if (!stateKey) return;
+  let saver = stateSavers.get(stateKey);
+  if (saver == null) {
+    saver = debounce(
+      (s: EditorState) => saveCachedEditorState(stateKey, s),
+      SAVE_STATE_DEBOUNCE_MS,
+    );
+    stateSavers.set(stateKey, saver);
+  }
+  saver(state);
+}
+
+// NOTE: Only called when an editor unmounts, so the saver is dropped rather than left in the map
+//  for every state key the session has ever shown. A pending saver holds the last EditorState,
+//  which holds the whole document.
+function flushCachedEditorState(stateKey: string | null) {
+  if (!stateKey) return;
+  const saver = stateSavers.get(stateKey);
+  if (saver == null) return;
+  saver.flush();
+  stateSavers.delete(stateKey);
+}
+
 function saveCachedEditorState(stateKey: string | null, state: EditorState | null) {
   if (!stateKey || state == null) return;
   const stateObj = state.toJSON(stateFields);
 
-  // Save state in sessionStorage by removing doc and saving the hash of it instead.
+  // Save state in sessionStorage by removing doc and saving a fingerprint of it instead.
   // This will be checked on restore and put back in if it matches.
-  stateObj.docHash = md5(stateObj.doc);
+  // Editable documents get the exact hash, so a collision can never restore undo history
+  // belonging to other content
+  stateObj.docHash = docFingerprint(stateObj.doc, { exact: !state.readOnly });
   stateObj.doc = undefined;
 
   try {
@@ -668,7 +741,7 @@ function saveCachedEditorState(stateKey: string | null, state: EditorState | nul
   }
 }
 
-function getCachedEditorState(doc: string, stateKey: string | null) {
+function getCachedEditorState(doc: string, stateKey: string | null, readOnly: boolean) {
   if (stateKey == null) return;
 
   try {
@@ -678,7 +751,7 @@ function getCachedEditorState(doc: string, stateKey: string | null) {
     const { docHash, ...state } = JSON.parse(stateStr);
 
     // Ensure the doc matches the one that was used to save the state
-    if (docHash !== md5(doc)) {
+    if (docHash !== docFingerprint(doc, { exact: !readOnly })) {
       return null;
     }
 

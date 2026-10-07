@@ -1,7 +1,9 @@
 import type { HttpResponse } from "@yaakapp-internal/models";
-import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { useCopyHttpResponse } from "../../hooks/useCopyHttpResponse";
-import { useResponseBodyText } from "../../hooks/useResponseBodyText";
+import { responseBodyTextQuery, useResponseBodyText } from "../../hooks/useResponseBodyText";
+import { useResponseFilter } from "../../hooks/useResponseFilter";
 import { useSaveResponse } from "../../hooks/useSaveResponse";
 import { languageFromContentType } from "../../lib/contentType";
 import { getContentTypeFromHeaders } from "../../lib/model_util";
@@ -52,30 +54,25 @@ interface HttpTextViewerProps {
 }
 
 function HttpTextViewer({ response, text, language, pretty, className }: HttpTextViewerProps) {
-  const [currentFilter, setCurrentFilter] = useState<string | null>(null);
-  const filteredBody = useResponseBodyText({ response, filter: currentFilter });
+  const queryClient = useQueryClient();
+  const filter = useResponseFilter({
+    stateKey: `response.body.${response.requestId}`,
+    // Shares the display query's cache entry, so the verdict costs no extra RPC
+    runFilter: useCallback(
+      (f: string) => queryClient.fetchQuery(responseBodyTextQuery({ response, filter: f })),
+      [queryClient, response],
+    ),
+  });
+  const filteredBody = useResponseBodyText({ response, filter: filter.appliedFilter });
   const saveResponse = useSaveResponse(response);
   const copyResponse = useCopyHttpResponse(response);
   const actionsDisabled = response.state !== "closed" && response.status >= 100;
-
-  const filterCallback = useMemo(
-    () => (filter: string) => {
-      setCurrentFilter(filter);
-      return {
-        data: filteredBody.data,
-        isPending: filteredBody.isPending,
-        error: !!filteredBody.error,
-      };
-    },
-    [filteredBody],
-  );
 
   return (
     <TextViewer
       text={text}
       language={language}
       stateKey={`response.body.${response.id}`}
-      filterStateKey={`response.body.${response.requestId}`}
       pretty={pretty}
       className={className}
       footerActions={[
@@ -98,7 +95,12 @@ function HttpTextViewer({ response, text, language, pretty, className }: HttpTex
           className="border !border-border-subtle"
         />,
       ]}
-      onFilter={filterCallback}
+      filter={filter}
+      filterResult={{
+        data: filteredBody.data,
+        isPending: filteredBody.isPending,
+        error: !!filteredBody.error,
+      }}
     />
   );
 }

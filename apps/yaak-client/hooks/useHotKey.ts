@@ -1,4 +1,4 @@
-import { type } from "@tauri-apps/plugin-os";
+import { platform } from "@yaakapp-internal/platform";
 import { debounce } from "@yaakapp-internal/lib";
 import { settingsAtom } from "@yaakapp-internal/models";
 import { atom, useAtomValue } from "jotai";
@@ -102,7 +102,7 @@ const defaultHotkeysOther: Record<HotkeyAction, string[]> = {
 
 /** Get the default hotkeys for the current platform */
 export const defaultHotkeys: Record<HotkeyAction, string[]> =
-  type() === "macos" ? defaultHotkeysMac : defaultHotkeysOther;
+  platform.osType() === "macos" ? defaultHotkeysMac : defaultHotkeysOther;
 
 /** Atom that provides the effective hotkeys by merging defaults with user settings */
 export const hotkeysAtom = atom((get) => {
@@ -112,9 +112,12 @@ export const hotkeysAtom = atom((get) => {
   // Merge default hotkeys with custom hotkeys from settings
   // Custom hotkeys override defaults for the same action
   // An empty array means the hotkey is intentionally disabled
-  const merged: Record<HotkeyAction, string[]> = { ...defaultHotkeys };
+  const merged: Partial<Record<HotkeyAction, string[]>> = {};
+  for (const action of hotkeyActions) {
+    merged[action] = defaultHotkeys[action];
+  }
   for (const [action, keys] of Object.entries(customHotkeys)) {
-    if (action in defaultHotkeys && Array.isArray(keys)) {
+    if (action in merged && Array.isArray(keys)) {
       merged[action as HotkeyAction] = keys;
     }
   }
@@ -122,7 +125,7 @@ export const hotkeysAtom = atom((get) => {
 });
 
 /** Helper function to get current hotkeys from the store */
-function getHotkeys(): Record<HotkeyAction, string[]> {
+function getHotkeys(): Partial<Record<HotkeyAction, string[]>> {
   return jotaiStore.get(hotkeysAtom);
 }
 
@@ -165,16 +168,25 @@ const layoutInsensitiveKeys = [
   "Space",
 ];
 
+/** Zoom is the browser's own on these keys, so the app has no such action there. */
+const ZOOM_ACTIONS: HotkeyAction[] = ["app.zoom_in", "app.zoom_out", "app.zoom_reset"];
+
+/**
+ * The actions this host actually has. An action left out of here has no keys in
+ * `hotkeysAtom`, so it never matches and never claims the keystroke.
+ */
 export const hotkeyActions: HotkeyAction[] = (
   Object.keys(defaultHotkeys) as (keyof typeof defaultHotkeys)[]
-).sort((a, b) => {
-  const scopeA = a.split(".")[0] || "";
-  const scopeB = b.split(".")[0] || "";
-  if (scopeA !== scopeB) {
-    return scopeA.localeCompare(scopeB);
-  }
-  return hotkeyLabels[a].localeCompare(hotkeyLabels[b]);
-});
+)
+  .filter((a) => platform.capabilities.interfaceZoom || !ZOOM_ACTIONS.includes(a))
+  .sort((a, b) => {
+    const scopeA = a.split(".")[0] || "";
+    const scopeB = b.split(".")[0] || "";
+    if (scopeA !== scopeB) {
+      return scopeA.localeCompare(scopeB);
+    }
+    return hotkeyLabels[a].localeCompare(hotkeyLabels[b]);
+  });
 
 export type HotKeyOptions = {
   enable?: boolean | (() => boolean);
@@ -318,7 +330,7 @@ export function getHotkeyScope(action: HotkeyAction): string {
 }
 
 export function formatHotkeyString(trigger: string): string[] {
-  const os = type();
+  const os = platform.osType();
   const parts = trigger.split("+");
   const labelParts: string[] = [];
 
@@ -333,7 +345,9 @@ export function formatHotkeyString(trigger: string): string[] {
       } else if (p === "Alt") {
         labelParts.push("⌥");
       } else if (p === "Enter") {
-        labelParts.push("↩");
+        // U+21A9 has an emoji presentation, which Chromium's font fallback picks
+        // (a blue glyph among monochrome ones). U+FE0E forces the text form.
+        labelParts.push("↩︎");
       } else if (p === "Tab") {
         labelParts.push("⇥");
       } else if (p === "Backspace") {

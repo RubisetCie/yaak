@@ -9,7 +9,6 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { basename } from "@tauri-apps/api/path";
 import classNames from "classnames";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WrappedEnvironmentVariable } from "../../hooks/useEnvironmentVariables";
@@ -34,11 +33,21 @@ import { Input } from "./Input";
 import { ensurePairId } from "./PairEditor.util";
 import type { RadioDropdownItem } from "./RadioDropdown";
 import { RadioDropdown } from "./RadioDropdown";
+import { platform } from "@yaakapp-internal/platform";
 
 export interface PairEditorHandle {
+  /**
+   * Focus a row's name field once it's able to take focus. Focus can't land immediately when the
+   * row isn't mounted yet or the editor is hidden — eg. sitting in a tab that's still becoming
+   * active — so this retries for up to ~1s. A newer focus request cancels a pending one.
+   */
   focusName(id: string): void;
+  /** Focus a row's value field. See {@link PairEditorHandle.focusName} for timing. */
   focusValue(id: string): void;
 }
+
+/** ~1s at 60fps, plenty for a tab switch to land without spinning forever if it never does */
+const MAX_FOCUS_ATTEMPTS = 60;
 
 export type PairEditorProps = {
   allowFileValues?: boolean;
@@ -53,7 +62,7 @@ export type PairEditorProps = {
   nameValidate?: InputProps["validate"];
   noScroll?: boolean;
   onChange: (pairs: PairWithId[]) => void;
-  pairs: Pair[];
+  pairs: EditablePair[];
   stateKey: InputProps["stateKey"];
   setRef?: (n: PairEditorHandle) => void;
   valueAutocomplete?: (name: string) => GenericCompletionConfig | undefined;
@@ -72,17 +81,47 @@ export type Pair = {
   contentType?: string;
   filename?: string;
   isFile?: boolean;
-  readOnlyName?: boolean;
 };
 
 export type PairWithId = Pair & {
   id: string;
 };
 
+/**
+ * A pair as handed to the editor. Adds behaviour that only the editor cares about, so the plain
+ * `Pair` stays the shape that gets written to models.
+ */
+export type EditablePair = Pair & {
+  /**
+   * When set, name edits are held until the field blurs and then committed through this, instead
+   * of calling `onChange` on every keystroke. Return false to reject the new name, which reverts
+   * the field. For names that can't be written directly, like a URL path placeholder that lives
+   * in the URL itself.
+   */
+  commitName?: (name: string) => boolean;
+};
+
+type EditablePairWithId = EditablePair & {
+  id: string;
+};
+
+/** Strip the editor-only fields, so they can never reach a model write */
+function toPairData({ commitName: _commitName, ...pair }: EditablePairWithId): PairWithId {
+  return pair;
+}
+
 /** Max number of pairs to show before prompting the user to reveal the rest */
 const MAX_INITIAL_PAIRS = 30;
 
-export function PairEditor({
+// Keyed on `stateKey` so no state survives a change of owner. Row ids alone can't tell owners
+// apart — two pair sets can share ids (eg. one duplicated from the other), and the same-rows
+// fast path below would swap in the new data without rebuilding the row editors, leaving any
+// still-focused input showing the old owner's text.
+export function PairEditor(props: PairEditorProps) {
+  return <PairEditorInner key={props.stateKey} {...props} />;
+}
+
+function PairEditorInner({
   allowFileValues,
   allowMultilineValues,
   className,
@@ -106,8 +145,8 @@ export function PairEditor({
   setRef,
 }: PairEditorProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [isDragging, setIsDragging] = useState<PairWithId | null>(null);
-  const [pairs, setPairs] = useState<PairWithId[]>([]);
+  const [isDragging, setIsDragging] = useState<EditablePairWithId | null>(null);
+  const [pairs, setPairs] = useState<EditablePairWithId[]>([]);
   const [showAll, toggleShowAll] = useToggle(false);
   // NOTE: Use local force update key because we trigger an effect on forceUpdateKey change. If
   //  we simply pass forceUpdateKey to the editor, the data set by useEffect will be stale.
@@ -115,16 +154,38 @@ export function PairEditor({
 
   const rowsRef = useRef<Record<string, RowHandle | null>>({});
 
+  const pendingFocusFrame = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (pendingFocusFrame.current != null) cancelAnimationFrame(pendingFocusFrame.current);
+    },
+    [],
+  );
+
+  const focusWhenReady = useCallback((id: string, field: "name" | "value") => {
+    if (pendingFocusFrame.current != null) cancelAnimationFrame(pendingFocusFrame.current);
+
+    let attemptsLeft = MAX_FOCUS_ATTEMPTS;
+    const attempt = () => {
+      pendingFocusFrame.current = null;
+      const row = rowsRef.current[id];
+      const landed = field === "name" ? row?.focusName() : row?.focusValue();
+      if (landed || --attemptsLeft <= 0) return;
+      pendingFocusFrame.current = requestAnimationFrame(attempt);
+    };
+    attempt();
+  }, []);
+
   const handle = useMemo<PairEditorHandle>(
     () => ({
       focusName(id: string) {
-        rowsRef.current[id]?.focusName();
+        focusWhenReady(id, "name");
       },
       focusValue(id: string) {
-        rowsRef.current[id]?.focusValue();
+        focusWhenReady(id, "value");
       },
     }),
-    [],
+    [focusWhenReady],
   );
 
   const initPairEditorRow = useCallback(
@@ -147,12 +208,27 @@ export function PairEditor({
   // oxlint-disable-next-line react-hooks/exhaustive-deps -- Only care about forceUpdateKey
   useEffect(() => {
     // Remove empty headers on initial render and ensure they all have valid ids (pairs didn't use to have IDs)
-    const newPairs: PairWithId[] = [];
+    const newPairs: EditablePairWithId[] = [];
     for (let i = 0; i < originalPairs.length; i++) {
       const p = originalPairs[i];
       if (!p) continue; // Make TS happy
       if (isPairEmpty(p)) continue;
       newPairs.push(ensurePairId(p));
+    }
+
+    // When the reset holds the exact same rows (eg. renaming a URL path placeholder, which keeps
+    // every row id), swap the data in without rebuilding the row editors. Unfocused inputs re-seed
+    // themselves when `defaultValue` changes, and a rebuild would drop the user's focus and
+    // selection — like tabbing from a placeholder's name into its value.
+    const trailingPair = pairs[pairs.length - 1];
+    const sameRows =
+      trailingPair != null &&
+      isPairEmpty(trailingPair) &&
+      pairs.length === newPairs.length + 1 &&
+      newPairs.every((p, i) => p.id === pairs[i]?.id);
+    if (sameRows) {
+      setPairs([...newPairs, trailingPair]);
+      return;
     }
 
     // Add empty last pair if there is none
@@ -166,10 +242,10 @@ export function PairEditor({
   }, [forceUpdateKey]);
 
   const setPairsAndSave = useCallback(
-    (fn: (pairs: PairWithId[]) => PairWithId[]) => {
+    (fn: (pairs: EditablePairWithId[]) => EditablePairWithId[]) => {
       setPairs((oldPairs) => {
         const pairs = fn(oldPairs);
-        onChange(pairs);
+        onChange(pairs.map(toPairData));
         return pairs;
       });
     },
@@ -177,7 +253,7 @@ export function PairEditor({
   );
 
   const handleChange = useCallback(
-    (pair: PairWithId) =>
+    (pair: EditablePairWithId) =>
       setPairsAndSave((pairs) => pairs.map((p) => (pair.id !== p.id ? p : pair))),
     [setPairsAndSave],
   );
@@ -362,14 +438,14 @@ export function PairEditor({
 
 type PairEditorRowProps = {
   className?: string;
-  pair: PairWithId;
+  pair: EditablePairWithId;
   forceFocusNamePairId?: string | null;
   forceFocusValuePairId?: string | null;
-  onChange?: (pair: PairWithId) => void;
-  onDelete?: (pair: PairWithId, focusPrevious: boolean) => void;
-  onFocusName?: (pair: PairWithId) => void;
-  onFocusValue?: (pair: PairWithId) => void;
-  onSubmit?: (pair: PairWithId) => void;
+  onChange?: (pair: EditablePairWithId) => void;
+  onDelete?: (pair: EditablePairWithId, focusPrevious: boolean) => void;
+  onFocusName?: (pair: EditablePairWithId) => void;
+  onFocusValue?: (pair: EditablePairWithId) => void;
+  onSubmit?: (pair: EditablePairWithId) => void;
   isLast?: boolean;
   disabled?: boolean;
   disableDrag?: boolean;
@@ -397,8 +473,8 @@ type PairEditorRowProps = {
 >;
 
 interface RowHandle {
-  focusName(): void;
-  focusValue(): void;
+  focusName(): boolean;
+  focusValue(): boolean;
 }
 
 export function PairEditorRow({
@@ -436,9 +512,11 @@ export function PairEditorRow({
   const handle = useRef<RowHandle>({
     focusName() {
       nameInputRef.current?.focus();
+      return nameInputRef.current?.isFocused() ?? false;
     },
     focusValue() {
       valueInputRef.current?.focus();
+      return valueInputRef.current?.isFocused() ?? false;
     },
   });
 
@@ -471,10 +549,36 @@ export function PairEditorRow({
     [onChange, pair],
   );
 
+  // The name being typed into a deferred-commit field, before it's committed or reverted
+  const pendingName = useRef<string | null>(null);
+
   const handleChangeName = useMemo(
-    () => (name: string) => onChange?.({ ...pair, name }),
+    () => (name: string) => {
+      // Keep the edit local until commit. Writing on every keystroke would reset the editor from
+      // beneath the cursor, since the pairs are derived from the name being edited.
+      if (pair.commitName != null) pendingName.current = name;
+      else onChange?.({ ...pair, name });
+    },
     [onChange, pair],
   );
+
+  const revertName = useCallback(() => {
+    const nameInput = nameInputRef.current;
+    if (nameInput != null) {
+      const changes = { from: 0, to: nameInput.value().length, insert: pair.name };
+      nameInput.dispatch({ changes });
+    }
+    pendingName.current = null;
+  }, [pair.name]);
+
+  const handleBlurName = useCallback(() => {
+    if (pair.commitName == null) return;
+
+    const name = pendingName.current;
+    pendingName.current = null;
+    if (name == null || name === pair.name) return;
+    if (!pair.commitName(name)) revertName();
+  }, [pair, revertName]);
 
   const handleChangeValueText = useMemo(
     () => (value: string) => onChange?.({ ...pair, value, isFile: false }),
@@ -551,6 +655,10 @@ export function PairEditorRow({
     [setDraggableRef, setDroppableRef],
   );
 
+  // Skip the trailing placeholder row. It exists to start a new pair, so a picker there would
+  // imply it's already a real row. `Input` handles the rest, including having no options to show.
+  const showOptionsPicker = !isLast;
+
   return (
     <div
       ref={handleSetRef}
@@ -596,7 +704,7 @@ export function PairEditorRow({
           stateKey={`name.${pair.id}.${stateKey}`}
           disabled={disabled}
           wrapLines={false}
-          readOnly={pair.readOnlyName || isDraggingGlobal}
+          readOnly={isDraggingGlobal}
           size="sm"
           required={!isLast && !!pair.enabled && !!pair.value}
           validate={nameValidate}
@@ -606,12 +714,14 @@ export function PairEditorRow({
           defaultValue={pair.name}
           label="Name"
           name={`name[${index}]`}
+          onBlur={handleBlurName}
           onChange={handleChangeName}
           onFocus={handleFocusName}
           placeholder={namePlaceholder ?? "name"}
           autocomplete={nameAutocomplete}
           autocompleteVariables={nameAutocompleteVariables}
           autocompleteFunctions={nameAutocompleteFunctions}
+          showOptionsPicker={showOptionsPicker}
         />
         <div className="w-full grid grid-cols-[minmax(0,1fr)_auto] gap-1 items-center">
           {pair.isFile ? (
@@ -656,6 +766,7 @@ export function PairEditorRow({
               autocomplete={valueAutocomplete?.(pair.name)}
               autocompleteFunctions={valueAutocompleteFunctions}
               autocompleteVariables={valueAutocompleteVariablesFiltered}
+              showOptionsPicker={showOptionsPicker}
             />
           )}
         </div>
@@ -675,8 +786,10 @@ export function PairEditorRow({
           <IconButton
             iconSize="sm"
             size="xs"
-            icon={isLast || disabled ? "empty" : "chevron_down"}
-            title="Select form data type"
+            // Ellipsis rather than a chevron: the name and value fields now carry chevrons for
+            // picking a suggestion, and this menu acts on the row instead of filling in a field.
+            icon={isLast || disabled ? "empty" : "ellipsis_vertical"}
+            title="More actions"
             className="text-text-subtlest"
           />
         </Dropdown>
@@ -746,7 +859,7 @@ function FileActionsDropdown({
         leftSlot: <Icon icon="file_code" />,
         onSelect: async () => {
           console.log("PAIR", pair);
-          const defaultFilename = await basename(pair.value ?? "");
+          const defaultFilename = await platform.files.basename(pair.value ?? "");
           const filename = await showPrompt({
             id: "filename",
             title: "Override Filename",
@@ -800,7 +913,8 @@ function FileActionsDropdown({
       <IconButton
         iconSize="sm"
         size="xs"
-        icon="chevron_down"
+        // Matches the plain row menu, so the actions column reads the same for file and text rows
+        icon="ellipsis_vertical"
         title="Select form data type"
         className="text-text-subtlest"
       />
@@ -808,7 +922,7 @@ function FileActionsDropdown({
   );
 }
 
-function emptyPair(): PairWithId {
+function emptyPair(): EditablePairWithId {
   return ensurePairId({ enabled: true, name: "", value: "" });
 }
 

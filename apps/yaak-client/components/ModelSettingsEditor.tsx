@@ -2,7 +2,9 @@ import type {
   Folder,
   GrpcRequest,
   HttpRequest,
+  HttpVersion,
   InheritedBoolSetting,
+  InheritedHttpVersionSetting,
   InheritedIntSetting,
   WebsocketRequest,
   Workspace,
@@ -13,6 +15,7 @@ import {
   modelSupportsSetting,
   type RequestSettingDefinition,
   SETTING_FOLLOW_REDIRECTS,
+  SETTING_HTTP_VERSION,
   SETTING_REQUEST_MESSAGE_SIZE,
   SETTING_REQUEST_TIMEOUT,
   SETTING_SEND_COOKIES,
@@ -21,6 +24,7 @@ import {
 } from "../lib/requestSettings";
 import { Checkbox } from "./core/Checkbox";
 import { PlainInput } from "./core/PlainInput";
+import { Select } from "./core/Select";
 import {
   SettingOverrideRow,
   SettingRow,
@@ -45,12 +49,14 @@ type ModelWithCookieSettings = Workspace | Folder | HttpRequest | WebsocketReque
 type ModelWithMessageSizeSettings = Workspace | Folder | WebsocketRequest | GrpcRequest;
 type BooleanSetting = boolean | InheritedBoolSetting;
 type IntegerSetting = number | InheritedIntSetting;
+type HttpVersionSetting = HttpVersion | InheritedHttpVersionSetting;
 type CookieSettingsPatch = {
   settingSendCookies?: ModelWithCookieSettings["settingSendCookies"];
   settingStoreCookies?: ModelWithCookieSettings["settingStoreCookies"];
 };
 type HttpSettingsPatch = {
   settingFollowRedirects?: ModelWithHttpSettings["settingFollowRedirects"];
+  settingHttpVersion?: ModelWithHttpSettings["settingHttpVersion"];
   settingRequestTimeout?: ModelWithHttpSettings["settingRequestTimeout"];
 };
 type TlsSettingsPatch = {
@@ -133,6 +139,22 @@ export function ModelSettingsEditor({ model, showSectionTitles = false }: Props)
               }
             />
           )}
+          {supportsHttpSettings && (
+            <HttpVersionSettingRow
+              settingDefinition={SETTING_HTTP_VERSION}
+              setting={model.settingHttpVersion}
+              inheritedValue={resolveInheritedValue(
+                ancestors,
+                SETTING_HTTP_VERSION.modelKey,
+                model.settingHttpVersion,
+              )}
+              onChange={(settingHttpVersion) =>
+                patchHttpSettings(model, {
+                  settingHttpVersion,
+                })
+              }
+            />
+          )}
         </SettingsSection>
       )}
       {supportsCookieSettings && (
@@ -172,7 +194,7 @@ export function ModelSettingsEditor({ model, showSectionTitles = false }: Props)
 }
 
 export function countOverriddenSettings(model: ModelWithSettings) {
-  const settings: (BooleanSetting | IntegerSetting)[] = [];
+  const settings: (BooleanSetting | IntegerSetting | HttpVersionSetting)[] = [];
 
   if (modelSupportsCookieSettings(model)) {
     settings.push(model.settingSendCookies, model.settingStoreCookies);
@@ -181,7 +203,11 @@ export function countOverriddenSettings(model: ModelWithSettings) {
   settings.push(model.settingValidateCertificates);
 
   if (modelSupportsHttpSettings(model)) {
-    settings.push(model.settingFollowRedirects, model.settingRequestTimeout);
+    settings.push(
+      model.settingFollowRedirects,
+      model.settingRequestTimeout,
+      model.settingHttpVersion,
+    );
   }
 
   if (modelSupportsMessageSizeSettings(model)) {
@@ -303,6 +329,63 @@ function BooleanSettingRow({
         size="md"
         title={settingDefinition.title}
         checked={value}
+        onChange={(value) => onChange({ ...setting, enabled: true, value })}
+      />
+    </SettingOverrideRow>
+  );
+}
+
+const HTTP_VERSION_OPTIONS: { label: string; value: HttpVersion }[] = [
+  { label: "Automatic", value: "auto" },
+  { label: "HTTP/1.1", value: "http1" },
+  { label: "HTTP/2", value: "http2" },
+];
+
+function HttpVersionSettingRow({
+  inheritedValue,
+  setting,
+  settingDefinition,
+  onChange,
+}: {
+  inheritedValue: HttpVersion;
+  setting: HttpVersionSetting;
+  settingDefinition: RequestSettingDefinition<"settingHttpVersion">;
+  onChange: (setting: HttpVersionSetting) => void;
+}) {
+  const inherited = isInheritedSetting(setting);
+  const overridden = inherited ? setting.enabled === true : false;
+  const value = inherited ? (overridden ? setting.value : inheritedValue) : setting;
+
+  if (!inherited) {
+    return (
+      <SettingRow title={settingDefinition.title} description={settingDefinition.description}>
+        <Select
+          hideLabel
+          name={settingDefinition.modelKey}
+          label={settingDefinition.title}
+          size="sm"
+          value={value}
+          options={HTTP_VERSION_OPTIONS}
+          onChange={(value) => onChange(value)}
+        />
+      </SettingRow>
+    );
+  }
+
+  return (
+    <SettingOverrideRow
+      title={settingDefinition.title}
+      description={settingDefinition.description}
+      overridden={overridden}
+      onResetOverride={() => onChange({ ...setting, enabled: false })}
+    >
+      <Select
+        hideLabel
+        name={settingDefinition.modelKey}
+        label={settingDefinition.title}
+        size="sm"
+        value={value}
+        options={HTTP_VERSION_OPTIONS}
         onChange={(value) => onChange({ ...setting, enabled: true, value })}
       />
     </SettingOverrideRow>
@@ -512,11 +595,16 @@ function resolveInheritedValue(
 ): boolean;
 function resolveInheritedValue(
   ancestors: (Folder | Workspace)[],
+  key: "settingHttpVersion",
+  fallback: HttpVersionSetting,
+): HttpVersion;
+function resolveInheritedValue(
+  ancestors: (Folder | Workspace)[],
   key: keyof WorkspaceSettings,
-  fallback: BooleanSetting | IntegerSetting,
+  fallback: BooleanSetting | IntegerSetting | HttpVersionSetting,
 ) {
   for (const ancestor of ancestors) {
-    const setting = ancestor[key] as BooleanSetting | IntegerSetting;
+    const setting = ancestor[key] as BooleanSetting | IntegerSetting | HttpVersionSetting;
     if (isInheritedSetting(setting)) {
       if (setting.enabled === true) {
         return setting.value;
@@ -532,6 +620,7 @@ function resolveInheritedValue(
 type WorkspaceSettings = Pick<
   Workspace,
   | "settingFollowRedirects"
+  | "settingHttpVersion"
   | "settingRequestMessageSize"
   | "settingRequestTimeout"
   | "settingSendCookies"
@@ -541,7 +630,7 @@ type WorkspaceSettings = Pick<
 
 type BooleanWorkspaceSettingKey = Exclude<
   keyof WorkspaceSettings,
-  "settingRequestTimeout" | "settingRequestMessageSize"
+  "settingRequestTimeout" | "settingRequestMessageSize" | "settingHttpVersion"
 >;
 
 function formatMegabytes(bytes: number) {

@@ -1,4 +1,4 @@
-import { type } from "@tauri-apps/plugin-os";
+import { platform } from "@yaakapp-internal/platform";
 import { useFonts } from "@yaakapp-internal/fonts";
 import type { EditorKeymap, Settings } from "@yaakapp-internal/models";
 import { patchModel, settingsAtom } from "@yaakapp-internal/models";
@@ -6,7 +6,7 @@ import { clamp, Heading, VStack } from "@yaakapp-internal/ui";
 import { useAtomValue } from "jotai";
 import { useState } from "react";
 import { activeWorkspaceAtom } from "../../hooks/useActiveWorkspace";
-import { invokeCmd } from "../../lib/tauri";
+import { rpc } from "../../lib/rpc";
 import { Button } from "../core/Button";
 import { Checkbox } from "../core/Checkbox";
 import {
@@ -170,7 +170,7 @@ export function SettingsInterface() {
 
         <SettingsSection title="Window">
           <NativeTitlebarSetting settings={settings} />
-          {type() !== "macos" && (
+          {platform.osType() !== "macos" && (
             <ModelSettingRowBoolean
               model={settings}
               modelKey="hideWindowControls"
@@ -206,7 +206,7 @@ function NativeTitlebarSetting({ settings }: { settings: Settings }) {
           size="xs"
           onClick={async () => {
             await patchModel(settings, { useNativeTitlebar: nativeTitlebar });
-            await invokeCmd("cmd_restart");
+            await rpc("cmd_restart");
           }}
         >
           Apply and Restart

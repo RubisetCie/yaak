@@ -1,4 +1,3 @@
-import { emit } from "@tauri-apps/api/event";
 import { debounce } from "@yaakapp-internal/lib";
 import type {
   FormInput,
@@ -10,20 +9,20 @@ import { openSettings } from "../commands/openSettings";
 import { Button } from "../components/core/Button";
 
 // Listen for toasts
-import { listenToTauriEvent } from "../hooks/useListenToTauriEvent";
+import { platform } from "@yaakapp-internal/platform";
 import { generateId } from "./generateId";
 import { showPrompt } from "./prompt";
 import { showPromptForm } from "./prompt-form";
-import { invokeCmd } from "./tauri";
+import { rpc } from "./rpc";
 import { showToast } from "./toast";
 
 export function initGlobalListeners() {
-  listenToTauriEvent<ShowToastRequest>("show_toast", (event) => {
-    showToast({ ...event.payload });
+  platform.listen<ShowToastRequest>("show_toast", (payload) => {
+    showToast({ ...payload });
   });
 
   // Show errors for any plugins that failed to load during startup
-  void invokeCmd<[string, string][]>("cmd_plugin_init_errors").then((errors) => {
+  void rpc<[string, string][]>("cmd_plugin_init_errors").then((errors) => {
     for (const [dir, err] of errors) {
       const name = dir.split(/[/\\]/).pop() ?? dir;
       showToast({
@@ -48,13 +47,13 @@ export function initGlobalListeners() {
     }
   });
 
-  listenToTauriEvent("settings", () => openSettings.mutate(null));
+  platform.listen("settings", () => openSettings.mutate(null));
 
   // Track active dynamic form dialogs so follow-up input updates can reach them
   const activeForms = new Map<string, (inputs: FormInput[]) => void>();
 
   // Listen for plugin events
-  listenToTauriEvent<InternalEvent>("plugin_event", async ({ payload: event }) => {
+  platform.listen<InternalEvent>("plugin_event", async (event) => {
     if (event.payload.type === "prompt_text_request") {
       const value = await showPrompt(event.payload);
       const result: InternalEvent = {
@@ -68,7 +67,7 @@ export function initGlobalListeners() {
           value,
         },
       };
-      await emit(event.id, result);
+      await platform.emit(event.id, result);
     } else if (event.payload.type === "prompt_form_request") {
       if (event.replyId != null) {
         // Follow-up update from plugin runtime — update the active dialog's inputs
@@ -93,7 +92,7 @@ export function initGlobalListeners() {
             done,
           },
         };
-        void emit(event.id, result);
+        void platform.emit(event.id, result);
       };
 
       const values = await showPromptForm({

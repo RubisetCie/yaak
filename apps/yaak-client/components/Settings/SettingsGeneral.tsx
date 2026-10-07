@@ -1,4 +1,3 @@
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { settingsAtom } from "@yaakapp-internal/models";
 import { Heading, VStack } from "@yaakapp-internal/ui";
 import { useAtomValue } from "jotai";
@@ -6,6 +5,7 @@ import { appInfo } from "../../lib/appInfo";
 import { revealInFinderText } from "../../lib/reveal";
 import { DismissibleBanner } from "../core/DismissibleBanner";
 import { SettingValue, SettingRow, SettingsList, SettingsSection } from "../core/SettingRow";
+import { platform } from "@yaakapp-internal/platform";
 
 const WORKSPACE_SETTINGS_MOVED_AT = "2026-06-30";
 
@@ -54,7 +54,7 @@ export function SettingsGeneral() {
                 {
                   title: revealInFinderText,
                   icon: "folder_open",
-                  onClick: () => revealItemInDir(appInfo.appDataDir),
+                  onClick: () => platform.revealItemInDir(appInfo.appDataDir),
                 },
               ]}
             />
@@ -70,7 +70,7 @@ export function SettingsGeneral() {
                 {
                   title: revealInFinderText,
                   icon: "folder_open",
-                  onClick: () => revealItemInDir(appInfo.appLogDir),
+                  onClick: () => platform.revealItemInDir(appInfo.appLogDir),
                 },
               ]}
             />

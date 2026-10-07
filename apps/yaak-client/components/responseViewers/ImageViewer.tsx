@@ -1,33 +1,33 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import classNames from "classnames";
 import { useEffect, useState } from "react";
 
-type Props = { className?: string } & (
+type Props = { className?: string; mimeType?: string } & (
   | {
-      bodyPath: string;
+      /** A URL for the body the host already stored. */
+      bodyUrl: string;
     }
   | {
       data: ArrayBuffer;
     }
 );
 
-export function ImageViewer({ className, ...props }: Props) {
+export function ImageViewer({ className, mimeType, ...props }: Props) {
   const [src, setSrc] = useState<string>();
-  const bodyPath = "bodyPath" in props ? props.bodyPath : null;
+  const bodyUrl = "bodyUrl" in props ? props.bodyUrl : null;
   const data = "data" in props ? props.data : null;
 
   useEffect(() => {
-    if (bodyPath != null) {
-      setSrc(convertFileSrc(bodyPath));
+    if (bodyUrl != null) {
+      setSrc(bodyUrl);
     } else if (data != null) {
-      const blob = new Blob([data], { type: "image/png" });
-      const url = URL.createObjectURL(blob);
-      setSrc(url);
-      return () => URL.revokeObjectURL(url);
+      const blob = new Blob([data], { type: mimeType ?? "image/png" });
+      const objectUrl = URL.createObjectURL(blob);
+      setSrc(objectUrl);
+      return () => URL.revokeObjectURL(objectUrl);
     } else {
       setSrc(undefined);
     }
-  }, [bodyPath, data]);
+  }, [bodyUrl, data, mimeType]);
 
   return (
     <img

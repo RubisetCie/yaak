@@ -7,11 +7,6 @@ on:
         description: Version tag
         default: "1.0.0"
         required: true
-      build_cef:
-        description: Build CEF versions
-        type: boolean
-        required: true
-        default: false
       unit_tests:
         description: Run unit tests
         type: boolean
@@ -60,7 +55,7 @@ jobs:
             args: >-
               --bundles deb
               --config ./tauri.release.conf.json
-              --config '{"productName":"yaak-cef","mainBinaryName":"yaak-cef","identifier":"app.yaak.desktop.cef","build":{"features":["cef"]},"bundle":{"createUpdaterArtifacts":false}}'
+              --config '{"productName":"yaak-cef","mainBinaryName":"yaak-cef","identifier":"app.yaak.desktop.cef","build":{"features":["cef"]}}'
             yaak_arch: "x64"
             os: "ubuntu"
             name: "Linux x64 [CEF]"
@@ -70,7 +65,7 @@ jobs:
             args: >-
               --bundles deb
               --config ./tauri.release.conf.json
-              --config '{"productName":"yaak-cef","mainBinaryName":"yaak-cef","identifier":"app.yaak.desktop.cef","build":{"features":["cef"]},"bundle":{"createUpdaterArtifacts":false}}'
+              --config '{"productName":"yaak-cef","mainBinaryName":"yaak-cef","identifier":"app.yaak.desktop.cef","build":{"features":["cef"]}}'
             yaak_arch: "arm64"
             os: "ubuntu"
             name: "Linux ARM64 [CEF]"
@@ -92,7 +87,7 @@ jobs:
             runtime: "wry"
             targets: "aarch64-pc-windows-msvc"
     runs-on: ${{ matrix.platform }}
-    timeout-minutes: 40
+    timeout-minutes: 360
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -109,7 +104,7 @@ jobs:
           targets: ${{ matrix.targets }}
 
       - name: Install CEF
-        if: github.event.inputs.unit_tests == 'true' && matrix.os == 'ubuntu' && matrix.runtime == 'cef'
+        if: matrix.os == 'ubuntu' && matrix.runtime == 'cef'
         uses: actions/cache@v5
         with:
           path: ~/.cache/tauri-cef
@@ -120,6 +115,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev xdg-utils
+          # crates/yaak-wasm compiles SQLite to wasm via sqlite-wasm-rs, whose C shim
+          # uses C23 [[noreturn]] and expects a freestanding wasm32 target. Ubuntu
+          # 22.04 ships only clang <=15: 14 rejects the attribute, and 15 falls
+          # through to host glibc headers ("bits/libc-header-start.h" not found).
+          # clang-18 handles it (it is what ubuntu-24.04 uses). Install it from
+          # apt.llvm.org since 22.04's repos stop at 15. Only the wasm build uses
+          # this compiler, so the shipped binary keeps 22.04's glibc floor.
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 18
+          echo "CC_wasm32_unknown_unknown=/usr/bin/clang-18" >> "$GITHUB_ENV"
+          echo "AR_wasm32_unknown_unknown=/usr/bin/llvm-ar-18" >> "$GITHUB_ENV"
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -150,6 +157,8 @@ jobs:
           YAAK_TARGET_ARCH: ${{ matrix.yaak_arch }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          # Also retries builds; upload retries alone cannot clean up starter assets.
+          retryAttempts: 3
           tauriScript: "node ../../node_modules/@tauri-apps/cli/tauri.js"
           tagName: "v__VERSION__"
           releaseName: "Release __VERSION__"
@@ -162,7 +171,7 @@ jobs:
           args: "${{ matrix.args }}"
 
       - name: Build and upload CEF tarball from deb (Linux only)
-        if: github.event.inputs.unit_tests == 'true' && matrix.os == 'ubuntu' && matrix.runtime == 'cef'
+        if: matrix.os == 'ubuntu' && matrix.runtime == 'cef'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -175,7 +184,13 @@ jobs:
           mkdir -p "$extract_dir"
           dpkg-deb -x "$deb" "$extract_dir"
           tar -C "$extract_dir" -czf "$tarball" .
-          gh release upload "${{ github.ref_name }}" "$tarball" --clobber
+          for attempt in 1 2 3 4; do
+            if gh release upload "$GITHUB_REF_NAME" "$tarball" --clobber; then
+              break
+            fi
+            if [ "$attempt" -eq 4 ]; then exit 1; fi
+            sleep 10
+          done
 
       # Build a per-machine NSIS installer for enterprise deployment (PDQ, SCCM, Intune)
       - name: Build Installer (Windows only)
@@ -190,10 +205,17 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         run: |
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
-          npx tauri bundle ${{ matrix.args }} --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false,"windows":{"nsis":{"installMode":"perMachine"}}}}'
+          npx tauri bundle ${{ matrix.args }} --bundles nsis --config '{"bundle":{"windows":{"nsis":{"installMode":"perMachine"}}}}'
           $setup = Get-ChildItem -Recurse -Path target -Filter "*setup*.exe" | Select-Object -First 1
           $dest = $setup.FullName -replace '-setup\.exe$', '-setup-machine.exe'
           $dest = $dest.Replace('_', '-')
           Copy-Item $setup.FullName $dest
-          gh release upload "v${{ github.event.inputs.version_tag }}" "$dest" --clobber
+          gh release upload "${{ github.ref_name }}" "$destSig" --clobber
+          for ($attempt = 1; $attempt -le 4; $attempt++) {
+            gh release upload "v${{ github.event.inputs.version_tag }}" "$dest" --clobber
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq 4) { exit $LASTEXITCODE }
+            Start-Sleep -Seconds 10
+          }

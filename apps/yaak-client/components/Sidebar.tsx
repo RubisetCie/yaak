@@ -43,7 +43,8 @@ import { getFolderActions } from "../hooks/useFolderActions";
 import { getGrpcRequestActions } from "../hooks/useGrpcRequestActions";
 import { useHotKey } from "../hooks/useHotKey";
 import { getHttpRequestActions } from "../hooks/useHttpRequestActions";
-import { useListenToTauriEvent } from "../hooks/useListenToTauriEvent";
+import { platform } from "@yaakapp-internal/platform";
+import { usePlatformEvent } from "../hooks/usePlatformEvent";
 import { getModelAncestors } from "../hooks/useModelAncestors";
 import { sendAnyHttpRequest } from "../hooks/useSendAnyHttpRequest";
 import { useSidebarHidden } from "../hooks/useSidebarHidden";
@@ -109,6 +110,7 @@ function Sidebar({ className }: { className?: string }) {
   const treeId = `tree.${activeWorkspaceId ?? "unknown"}`;
   const filterText = useAtomValue(sidebarFilterAtom);
   const [tree, allFields, emptyFilterSuggestions] = useAtomValue(sidebarTreeAtom) ?? [];
+
   const wrapperRef = useRef<HTMLElement>(null);
   const treeRef = useRef<TreeHandle>(null);
   const filterRef = useRef<InputHandle>(null);
@@ -127,11 +129,17 @@ function Sidebar({ className }: { className?: string }) {
     if (!didFocus) filterRef.current?.focus();
   }, []);
 
-  // Focus any new sidebar models when created
-  useListenToTauriEvent<ModelPayload>("model_write", ({ payload }) => {
-    if (!isSidebarLeafModel(payload.model)) return;
-    if (!(payload.change.type === "upsert" && payload.change.created)) return;
-    treeRef.current?.selectItem(payload.model.id, true);
+  // Focus new sidebar models created by the user in this window. Writes from other
+  // sources (import, sync, CLI) can carry thousands of models and shouldn't move
+  // the selection.
+  usePlatformEvent<ModelPayload[]>("model_writes", (payloads) => {
+    for (const payload of payloads) {
+      if (payload.updateSource.type !== "window") continue;
+      if (payload.updateSource.label !== platform.window.label) continue;
+      if (!isSidebarLeafModel(payload.model)) continue;
+      if (!(payload.change.type === "upsert" && payload.change.created)) continue;
+      treeRef.current?.selectItem(payload.model.id, true);
+    }
   });
 
   useEffect(() => {
@@ -721,7 +729,11 @@ function Sidebar({ className }: { className?: string }) {
   );
 }
 
-export default Sidebar;
+// Memoized so route navigations (which re-render the workspace layout) don't
+// re-render the sidebar subtree. In large workspaces a sidebar re-render is
+// very expensive: it re-renders DndContext, whose context churn re-renders
+// every visible TreeItem regardless of their memo comparators.
+export default memo(Sidebar);
 
 function getGitContextMenuItems({
   items,
@@ -926,10 +938,14 @@ const sidebarTreeAtom = atom<
 
     if (node.children != null) {
       childItems.sort((a, b) => {
-        if (a.sortPriority === b.sortPriority) {
-          return a.updatedAt > b.updatedAt ? 1 : -1;
+        if (a.sortPriority !== b.sortPriority) {
+          return a.sortPriority - b.sortPriority;
         }
-        return a.sortPriority - b.sortPriority;
+        // Keep equal-priority items in a stable order when they are edited.
+        if (a.createdAt !== b.createdAt) {
+          return a.createdAt > b.createdAt ? 1 : -1;
+        }
+        return a.id === b.id ? 0 : a.id > b.id ? 1 : -1;
       });
 
       for (const item of childItems) {

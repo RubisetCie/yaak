@@ -6,8 +6,11 @@ publish = false
 
 [dependencies]
 async-trait = "0.1"
+base64 = "0.22.1" # For carrying body chunks over a text-only plugin transport
 log = { workspace = true }
 md5 = "0.8.0"
+sha2 = { workspace = true }
+chrono = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt"] }
@@ -20,4 +23,6 @@ yaak-templates = { workspace = true }
 yaak-tls = { workspace = true }
 
 [dev-dependencies]
+rusqlite = { version = "0.38", features = ["bundled"] }
 tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

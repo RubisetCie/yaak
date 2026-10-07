@@ -36,12 +36,16 @@ import { fireAndForget } from "../../lib/fireAndForget";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { Button } from "./Button";
 import { Hotkey } from "./Hotkey";
+import { IconButton } from "./IconButton";
+import type { SeparatorAction } from "./Separator";
 import { Separator } from "./Separator";
 
 export type DropdownItemSeparator = {
   type: "separator";
   label?: ReactNode;
   hidden?: boolean;
+  /** A control shown beside the label, eg. revealing the labelled file on disk. */
+  action?: SeparatorAction;
 };
 
 export type DropdownItemContent = {
@@ -66,6 +70,12 @@ export type DropdownItemDefault = {
   submenu?: DropdownItem[];
   /** If true, submenu opens on click instead of hover */
   submenuOpenOnClick?: boolean;
+  /**
+   * How the submenu opens. "row" (default) opens it from the row itself (hover, or click
+   * with submenuOpenOnClick). "button" keeps the row selectable via onSelect and renders
+   * a dedicated button on the right that opens the submenu.
+   */
+  submenuTrigger?: "row" | "button";
   icon?: IconProps["icon"];
 };
 
@@ -233,23 +243,40 @@ export const Dropdown = forwardRef<DropdownRef, DropdownProps>(function Dropdown
 
 export interface ContextMenuProps {
   triggerPosition: { x: number; y: number } | null;
+  /**
+   * The box the menu belongs to, when the trigger has one.
+   *
+   * Placement aligns to the trigger's left or right edge depending on the room beside it, so a
+   * menu opened from an element wants its real rect. Without one the position is treated as a
+   * zero-width point, which is right for a menu opened at the cursor and wrong for one opened
+   * from a button.
+   */
+  triggerRect?: Pick<DOMRect, "top" | "bottom" | "left" | "right">;
+  /**
+   * The element the menu belongs to, so a click on it doesn't count as a click outside.
+   *
+   * Without this the trigger gets both: the outside-click handler closes the menu on mousedown,
+   * then the trigger's own click opens it again, and pressing it looks like it does nothing.
+   */
+  triggerRef?: RefObject<HTMLElement | null>;
   className?: string;
   items: DropdownProps["items"];
   onClose: () => void;
 }
 
 export const ContextMenu = forwardRef<DropdownRef, ContextMenuProps>(function ContextMenu(
-  { triggerPosition, className, items, onClose },
+  { triggerPosition, triggerRect, triggerRef, className, items, onClose },
   ref,
 ) {
   const triggerShape = useMemo(
-    () => ({
-      top: triggerPosition?.y ?? 0,
-      bottom: triggerPosition?.y ?? 0,
-      left: triggerPosition?.x ?? 0,
-      right: triggerPosition?.x ?? 0,
-    }),
-    [triggerPosition],
+    () =>
+      triggerRect ?? {
+        top: triggerPosition?.y ?? 0,
+        bottom: triggerPosition?.y ?? 0,
+        left: triggerPosition?.x ?? 0,
+        right: triggerPosition?.x ?? 0,
+      },
+    [triggerPosition, triggerRect],
   );
 
   if (triggerPosition == null) return null;
@@ -259,9 +286,13 @@ export const ContextMenu = forwardRef<DropdownRef, ContextMenuProps>(function Co
       isOpen={true} // Always open because we return null if not
       className={className}
       defaultSelectedIndex={null}
+      // A menu opened from an element points back at it. One opened at the cursor has nothing
+      // to point at, so it goes without.
+      showTriangle={triggerRect != null}
       ref={ref}
       items={items}
       onClose={onClose}
+      triggerRef={triggerRef}
       triggerShape={triggerShape}
     />
   );
@@ -277,7 +308,9 @@ interface MenuProps {
   fullWidth?: boolean;
   isOpen: boolean;
   items: DropdownItem[];
-  triggerRef?: RefObject<HTMLButtonElement | null>;
+  // Any element, not just a button: a menu can be opened from anything, and this is only ever
+  // used to ask whether a click landed on the trigger
+  triggerRef?: RefObject<HTMLElement | null>;
   isSubmenu?: boolean;
 }
 
@@ -479,9 +512,15 @@ const Menu = forwardRef<Omit<DropdownRef, "open" | "isOpen" | "toggle" | "items"
           }
         }
 
-        if (!item.keepOpenOnSelect) handleCloseAll();
+        if (!item.keepOpenOnSelect) {
+          handleCloseAll();
+        } else if (isSubmenu) {
+          // Keep the parent menu open, but close this submenu — its items may no
+          // longer describe the row after the action (e.g. Pin → Unpin, Remove)
+          handleClose();
+        }
       },
-      [handleCloseAll, setSelectedIndex],
+      [handleCloseAll, handleClose, isSubmenu, setSelectedIndex],
     );
 
     useImperativeHandle(ref, () => {
@@ -606,7 +645,7 @@ const Menu = forwardRef<Omit<DropdownRef, "open" | "isOpen" | "toggle" | "items"
         const item = filteredItems[selectedIndex ?? -1];
         if (!item || item.type === "separator" || item.type === "content") return;
         e.preventDefault();
-        if (item.submenu) {
+        if (item.submenu && item.submenuTrigger !== "button") {
           const parent = document.activeElement as HTMLButtonElement;
           if (parent) {
             setActiveSubmenu({ item, parent, viaKeyboard: true });
@@ -625,9 +664,11 @@ const Menu = forwardRef<Omit<DropdownRef, "open" | "isOpen" | "toggle" | "items"
           clearTimeout(submenuTimeoutRef.current);
         }
 
-        if (item.submenu && !item.submenuOpenOnClick) {
+        if (item.submenu && !item.submenuOpenOnClick && item.submenuTrigger !== "button") {
           setActiveSubmenu({ item, parent });
-        } else if (activeSubmenu) {
+        } else if (activeSubmenu && activeSubmenu.item !== item) {
+          // Hovering the row that owns the open submenu must not dismiss it — the
+          // pointer travels across the row on its way to a button-triggered submenu
           submenuTimeoutRef.current = window.setTimeout(() => {
             const submenuEl = submenuRef.current;
             if (!submenuEl || !activeSubmenu) {
@@ -753,6 +794,7 @@ const Menu = forwardRef<Omit<DropdownRef, "open" | "isOpen" | "toggle" | "items"
                   // oxlint-disable-next-line no-array-index-key -- Nothing else available
                   key={i}
                   className={classNames("my-1.5", item.label ? "ml-2" : null)}
+                  action={item.action}
                 >
                   {item.label}
                 </Separator>
@@ -774,6 +816,7 @@ const Menu = forwardRef<Omit<DropdownRef, "open" | "isOpen" | "toggle" | "items"
                 onFocus={handleFocus}
                 onSelect={handleSelect}
                 onHover={handleItemHover}
+                onOpenSubmenu={(item, el) => setActiveSubmenu({ item, parent: el })}
                 // oxlint-disable-next-line no-array-index-key -- It's fine
                 key={i}
                 item={item}
@@ -845,6 +888,7 @@ interface MenuItemProps {
   onSelect: (item: DropdownItemDefault, el?: HTMLButtonElement) => Promise<void>;
   onFocus: (item: DropdownItemDefault) => void;
   onHover: (item: DropdownItemDefault, el: HTMLButtonElement) => void;
+  onOpenSubmenu: (item: DropdownItemDefault, el: HTMLButtonElement) => void;
   focused: boolean;
   isParentOfActiveSubmenu?: boolean;
 }
@@ -856,6 +900,7 @@ function MenuItem({
   onHover,
   item,
   onSelect,
+  onOpenSubmenu,
   isParentOfActiveSubmenu,
   ...props
 }: MenuItemProps) {
@@ -891,19 +936,22 @@ function MenuItem({
     e.currentTarget.focus();
   };
 
-  const rightSlot = item.submenu ? (
-    <Icon icon="chevron_right" color="secondary" />
-  ) : (
-    (item.rightSlot ?? <Hotkey variant="text" action={item.hotKeyAction ?? null} />)
-  );
+  const hasButtonSubmenu = item.submenu != null && item.submenuTrigger === "button";
 
-  return (
+  const rightSlot =
+    item.submenu && !hasButtonSubmenu ? (
+      <Icon icon="chevron_right" color="secondary" />
+    ) : (
+      (item.rightSlot ?? <Hotkey variant="text" action={item.hotKeyAction ?? null} />)
+    );
+
+  const button = (
     <Button
       ref={initRef}
       size="sm"
       tabIndex={-1}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={(e) => e.currentTarget.blur()}
+      onMouseEnter={hasButtonSubmenu ? undefined : handleMouseEnter}
+      onMouseLeave={hasButtonSubmenu ? undefined : (e) => e.currentTarget.blur()}
       disabled={item.disabled}
       onFocus={handleFocus}
       onClick={handleClick}
@@ -924,6 +972,7 @@ function MenuItem({
         "min-w-32 outline-hidden px-2 mx-1.5 flex whitespace-nowrap",
         "focus:bg-surface-highlight focus:text rounded-sm focus:outline-hidden focus-visible:outline-1",
         isParentOfActiveSubmenu && "bg-surface-highlight text rounded-sm",
+        hasButtonSubmenu && "pr-8",
         item.color === "danger" && "text-danger!",
         item.color === "primary" && "text-primary!",
         item.color === "success" && "text-success!",
@@ -935,6 +984,52 @@ function MenuItem({
     >
       <div className={classNames("truncate min-w-20")}>{item.label}</div>
     </Button>
+  );
+
+  if (!hasButtonSubmenu) {
+    return button;
+  }
+
+  // The submenu trigger overlays the row as a sibling (not a child) because the row is
+  // itself a button and buttons cannot nest. Hover handling lives on this wrapper so the
+  // row keeps its focus highlight while the mouse is over the trigger.
+  return (
+    <div
+      className="relative grid group/menuitem"
+      onMouseEnter={() => {
+        const el = buttonRef.current;
+        if (el == null) return;
+        onHover(item, el);
+        el.focus();
+      }}
+      onMouseLeave={() => buttonRef.current?.blur()}
+    >
+      {button}
+      <div
+        className={classNames(
+          "absolute right-1.5 inset-y-0 flex items-center",
+          "opacity-0 group-hover/menuitem:opacity-100 group-focus-within/menuitem:opacity-100",
+        )}
+      >
+        <IconButton
+          color="custom"
+          size="2xs"
+          tabIndex={-1}
+          icon="ellipsis_vertical"
+          iconColor="secondary"
+          title="More actions"
+          className="h-full! w-7!"
+          onMouseDown={(e) => {
+            // Prevent the trigger from stealing focus, which would unhighlight the row
+            e.preventDefault();
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenSubmenu(item, e.currentTarget);
+          }}
+        />
+      </div>
+    </div>
   );
 }
 

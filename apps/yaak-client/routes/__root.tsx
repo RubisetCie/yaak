@@ -1,6 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createRootRoute, Outlet } from "@tanstack/react-router";
-import { type } from "@tauri-apps/plugin-os";
+import { platform } from "@yaakapp-internal/platform";
 import classNames from "classnames";
 import { Provider as JotaiProvider } from "jotai";
 import { LazyMotion, MotionConfig } from "motion/react";
@@ -12,6 +12,9 @@ import { queryClient } from "../lib/queryClient";
 
 const Toasts = lazy(() => import("../components/Toasts").then((m) => ({ default: m.Toasts })));
 const Dialogs = lazy(() => import("../components/Dialogs").then((m) => ({ default: m.Dialogs })));
+const ContextMenus = lazy(() =>
+  import("../components/ContextMenus").then((m) => ({ default: m.ContextMenus })),
+);
 
 export const Route = createRootRoute({
   component: RouteComponent,
@@ -29,6 +32,7 @@ function RouteComponent() {
             <Suspense>
               <Toasts />
               <Dialogs />
+              <ContextMenus />
             </Suspense>
             <Layout />
             <GlobalHooks />
@@ -42,7 +46,10 @@ function RouteComponent() {
 function Layout() {
   return (
     <div
-      className={classNames("w-full h-full", type() === "linux" && "border border-border-subtle")}
+      className={classNames(
+        "w-full h-full",
+        platform.osType() === "linux" && "border border-border-subtle",
+      )}
     >
       <Outlet />
     </div>

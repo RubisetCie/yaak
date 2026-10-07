@@ -1,5 +1,5 @@
 // Listen for settings changes, the re-compute theme
-import { listen } from "@tauri-apps/api/event";
+import { platform } from "@yaakapp-internal/platform";
 import type { ModelPayload, Settings } from "@yaakapp-internal/models";
 import { fireAndForget } from "./lib/fireAndForget";
 import { getSettings } from "./lib/settings";
@@ -12,10 +12,12 @@ function setFonts(settings: Settings) {
   );
 }
 
-listen<ModelPayload>("model_write", async (event) => {
-  if (event.payload.change.type !== "upsert") return;
-  if (event.payload.model.model !== "settings") return;
-  setFonts(event.payload.model);
-}).catch(console.error);
+platform.listen<ModelPayload[]>("model_writes", (payloads) => {
+  for (const payload of payloads) {
+    if (payload.change.type !== "upsert") continue;
+    if (payload.model.model !== "settings") continue;
+    setFonts(payload.model);
+  }
+});
 
 fireAndForget(getSettings().then((settings) => setFonts(settings)));

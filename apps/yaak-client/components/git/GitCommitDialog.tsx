@@ -1,4 +1,4 @@
-import type { GitStatusEntry } from "@yaakapp-internal/git";
+import type { GitStatus, GitStatusEntry } from "@yaakapp-internal/git";
 import { useGit } from "@yaakapp-internal/git";
 import type {
   Environment,
@@ -9,16 +9,18 @@ import type {
   Workspace,
 } from "@yaakapp-internal/models";
 import { Banner, HStack, Icon, InlineCode, SplitLayout } from "@yaakapp-internal/ui";
-import classNames from "classnames";
-import { useCallback, useMemo, useState } from "react";
+import { type ComponentProps, useCallback, useMemo, useState } from "react";
 import { modelToYaml } from "../../lib/diffYaml";
 import { resolvedModelName } from "../../lib/resolvedModelName";
 import { showConfirm } from "../../lib/confirm";
 import { showErrorToast } from "../../lib/toast";
 import { sync } from "../../init/sync";
 import { Button } from "../core/Button";
+import { Chip } from "../core/Chip";
 import type { CheckboxProps } from "../core/Checkbox";
 import { Checkbox } from "../core/Checkbox";
+import type { CheckboxTreeNode } from "../core/CheckboxTree";
+import { CheckboxTree } from "../core/CheckboxTree";
 import { DiffViewer } from "../core/Editor/DiffViewer";
 import { Input } from "../core/Input";
 import { Separator } from "../core/Separator";
@@ -136,6 +138,15 @@ export function GitCommitDialog({ syncDir, onDone, workspace }: Props) {
     return next(workspace, []);
   }, [workspace, internalEntries]);
 
+  const treeNode: CheckboxTreeNode<CommitTreeNode> | null = useMemo(() => {
+    const toTreeNode = (n: CommitTreeNode): CheckboxTreeNode<CommitTreeNode> => ({
+      key: n.status.relaPath + n.status.status + n.status.staged,
+      data: n,
+      children: n.children.map(toTreeNode),
+    });
+    return tree == null ? null : toTreeNode(tree);
+  }, [tree]);
+
   const checkNode = useCallback(
     (treeNode: CommitTreeNode) => {
       const checked = nodeCheckedStatus(treeNode);
@@ -183,7 +194,7 @@ export function GitCommitDialog({ syncDir, onDone, workspace }: Props) {
     [restore],
   );
 
-  if (tree == null) {
+  if (tree == null || treeNode == null) {
     return null;
   }
 
@@ -213,12 +224,18 @@ export function GitCommitDialog({ syncDir, onDone, workspace }: Props) {
                   style={innerStyle}
                   className="h-full overflow-y-auto pb-3 pr-0.5 transform-cpu"
                 >
-                  <TreeNodeChildren
-                    node={tree}
-                    depth={0}
-                    onCheck={checkNode}
-                    onSelect={handleSelectChild}
-                    selectedPath={selectedEntry?.relaPath ?? null}
+                  <CheckboxTree
+                    node={treeNode}
+                    checked={(n) => nodeCheckedStatus(n.data)}
+                    onCheck={(n) => checkNode(n.data)}
+                    checkboxTitle={(n) =>
+                      nodeCheckedStatus(n.data) ? "Unstage change" : "Stage change"
+                    }
+                    isRelevant={(n) => n.data.status.status !== "current"}
+                    canSelectRow={(n) => n.data.status.status !== "current"}
+                    onSelectRow={(n) => handleSelectChild(n.data.status)}
+                    isRowSelected={(n) => selectedEntry?.relaPath === n.data.status.relaPath}
+                    renderRow={(n) => <CommitTreeRow node={n.data} />}
                   />
                   {externalEntries.find((e) => e.status !== "current") && (
                     <>
@@ -290,96 +307,30 @@ export function GitCommitDialog({ syncDir, onDone, workspace }: Props) {
   );
 }
 
-function TreeNodeChildren({
-  node,
-  depth,
-  onCheck,
-  onSelect,
-  selectedPath,
-}: {
-  node: CommitTreeNode | null;
-  depth: number;
-  onCheck: (node: CommitTreeNode, checked: boolean) => void;
-  onSelect: (entry: GitStatusEntry) => void;
-  selectedPath: string | null;
-}) {
-  if (node === null) return null;
-  if (!isNodeRelevant(node)) return null;
-
-  const checked = nodeCheckedStatus(node);
-  const isSelected = selectedPath === node.status.relaPath;
-
+function CommitTreeRow({ node }: { node: CommitTreeNode }) {
   return (
-    <div
-      className={classNames(
-        depth > 0 && "pl-4 ml-2 border-l border-dashed border-border-subtle relative",
-      )}
-    >
-      <div
-        className={classNames(
-          "relative flex gap-1 w-full h-xs items-center",
-          isSelected ? "text-text" : "text-text-subtle",
-        )}
-      >
-        {isSelected && (
-          <div className="absolute left-[-100vw] right-0 top-0 bottom-0 bg-surface-active opacity-30 -z-10" />
-        )}
-        <Checkbox
-          checked={checked}
-          title={checked ? "Unstage change" : "Stage change"}
-          hideLabel
-          onChange={(checked) => onCheck(node, checked)}
+    <>
+      {node.model.model !== "http_request" &&
+      node.model.model !== "grpc_request" &&
+      node.model.model !== "websocket_request" ? (
+        <Icon
+          color="secondary"
+          icon={
+            node.model.model === "folder"
+              ? "folder"
+              : node.model.model === "environment"
+                ? "variable"
+                : "house"
+          }
         />
-        <button
-          type="button"
-          className={classNames("flex-1 min-w-0 flex items-center gap-1 px-1 py-0.5 text-left")}
-          onClick={() => node.status.status !== "current" && onSelect(node.status)}
-        >
-          {node.model.model !== "http_request" &&
-          node.model.model !== "grpc_request" &&
-          node.model.model !== "websocket_request" ? (
-            <Icon
-              color="secondary"
-              icon={
-                node.model.model === "folder"
-                  ? "folder"
-                  : node.model.model === "environment"
-                    ? "variable"
-                    : "house"
-              }
-            />
-          ) : (
-            <span aria-hidden className="w-4" />
-          )}
-          <div className="truncate flex-1">{resolvedModelName(node.model)}</div>
-          {node.status.status !== "current" && (
-            <InlineCode
-              className={classNames(
-                "py-0 bg-transparent w-24 text-center shrink-0",
-                node.status.status === "modified" && "text-info",
-                node.status.status === "untracked" && "text-success",
-                node.status.status === "removed" && "text-danger",
-              )}
-            >
-              {node.status.status}
-            </InlineCode>
-          )}
-        </button>
-      </div>
-
-      {node.children.map((childNode) => {
-        return (
-          <TreeNodeChildren
-            key={childNode.status.relaPath + childNode.status.status + childNode.status.staged}
-            node={childNode}
-            depth={depth + 1}
-            onCheck={onCheck}
-            onSelect={onSelect}
-            selectedPath={selectedPath}
-          />
-        );
-      })}
-    </div>
+      ) : (
+        <span aria-hidden className="w-4" />
+      )}
+      <div className="truncate flex-1">{resolvedModelName(node.model)}</div>
+      {node.status.status !== "current" && (
+        <Chip color={statusColor(node.status.status)}>{node.status.status}</Chip>
+      )}
+    </>
   );
 }
 
@@ -411,16 +362,9 @@ function ExternalTreeNode({
         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-1 w-full items-center">
           <Icon color="secondary" icon="file_code" />
           <div className="truncate">{displayPath}</div>
-          <InlineCode
-            className={classNames(
-              "py-0 ml-auto bg-transparent w-24 text-center",
-              entry.status === "modified" && "text-info",
-              entry.status === "untracked" && "text-success",
-              entry.status === "removed" && "text-danger",
-            )}
-          >
+          <Chip className="ml-auto" color={statusColor(entry.status)}>
             {entry.status}
-          </InlineCode>
+          </Chip>
         </div>
       }
     />
@@ -484,15 +428,6 @@ function setCheckedAndChildren(
   if (toUnstage.length > 0) unstage({ relaPaths: toUnstage });
 }
 
-function isNodeRelevant(node: CommitTreeNode): boolean {
-  if (node.status.status !== "current") {
-    return true;
-  }
-
-  // Recursively check children
-  return node.children.some((c) => isNodeRelevant(c));
-}
-
 function DiffPanel({
   entry,
   onDiscardChanges,
@@ -522,4 +457,21 @@ function DiffPanel({
       <DiffViewer original={prevYaml ?? ""} modified={nextYaml ?? ""} className="flex-1 min-h-0" />
     </div>
   );
+}
+
+function statusColor(status: GitStatus): ComponentProps<typeof Chip>["color"] {
+  switch (status) {
+    case "modified":
+      return "info";
+    case "untracked":
+      return "success";
+    case "removed":
+      return "danger";
+    case "conflict":
+      return "warning";
+    case "current":
+    case "renamed":
+    case "type_change":
+      return "default";
+  }
 }
