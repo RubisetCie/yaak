@@ -1,4 +1,3 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useRef } from "react";
 import { openSettings } from "../commands/openSettings";
 import { useExportData } from "../hooks/useExportData";
@@ -9,6 +8,7 @@ import { Dropdown } from "./core/Dropdown";
 import { Icon } from "@yaakapp-internal/ui";
 import { IconButton } from "./core/IconButton";
 import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
+import { platform } from "@yaakapp-internal/platform";
 
 export function SettingsDropdown() {
   const exportData = useExportData();
@@ -56,7 +56,7 @@ export function SettingsDropdown() {
         {
           label: "Create Run Button",
           leftSlot: <Icon icon="rocket" />,
-          onSelect: () => openUrl("https://yaak.app/button/new"),
+          onSelect: () => platform.openUrl("https://yaak.app/button/new"),
         },
       ]}
     >

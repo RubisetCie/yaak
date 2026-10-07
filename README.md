@@ -16,6 +16,10 @@
 
 ![Yaak API Client](https://github.com/RubisetCie/yaak/blob/main/pictures/screenshot.png?raw=true)
 
+## Install
+
+Download Yaak for macOS, Windows, or Linux from [yaak.app/download](https://yaak.app/download). Package managers and other install methods are in the [installation docs](https://yaak.app/docs/getting-started/installation).
+
 ## Features
 
 Yaak is an offline-first API client designed to stay out of your way while giving you everything you need when you need it.
@@ -59,3 +63,9 @@ It’s fast, lightweight, and private. No telemetry, no VC funding, and no cloud
 - [Yaak vs Postman](https://yaak.app/alternatives/postman)
 - [Yaak vs Bruno](https://yaak.app/alternatives/bruno)
 - [Yaak vs Insomnia](https://yaak.app/alternatives/insomnia)
+
+## License
+
+The source is [MIT licensed](LICENSE) and can be built and run for free, for both personal and commercial use.
+
+The prebuilt binaries follow Yaak's [pricing terms](https://yaak.app/pricing): free for personal use, license required for commercial use.

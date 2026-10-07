@@ -1,5 +1,5 @@
 // Listen for settings changes, the re-compute theme
-import { listen } from "@tauri-apps/api/event";
+import { platform } from "@yaakapp-internal/platform";
 import type { ModelPayload } from "@yaakapp-internal/models";
 import { fireAndForget } from "./lib/fireAndForget";
 import { getSettings } from "./lib/settings";
@@ -8,10 +8,12 @@ function setFontSizeOnDocument(fontSize: number) {
   document.documentElement.style.fontSize = `${fontSize}px`;
 }
 
-listen<ModelPayload>("model_write", async (event) => {
-  if (event.payload.change.type !== "upsert") return;
-  if (event.payload.model.model !== "settings") return;
-  setFontSizeOnDocument(event.payload.model.interfaceFontSize);
-}).catch(console.error);
+platform.listen<ModelPayload[]>("model_writes", (payloads) => {
+  for (const payload of payloads) {
+    if (payload.change.type !== "upsert") continue;
+    if (payload.model.model !== "settings") continue;
+    setFontSizeOnDocument(payload.model.interfaceFontSize);
+  }
+});
 
 fireAndForget(getSettings().then((settings) => setFontSizeOnDocument(settings.interfaceFontSize)));

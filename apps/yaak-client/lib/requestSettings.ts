@@ -5,6 +5,7 @@ type ModelType = AnyModel["model"];
 type WorkspaceRequestSettings = Pick<
   Workspace,
   | "settingFollowRedirects"
+  | "settingHttpVersion"
   | "settingRequestMessageSize"
   | "settingRequestTimeout"
   | "settingSendCookies"
@@ -64,6 +65,14 @@ export const SETTING_FOLLOW_REDIRECTS = defineRequestSetting({
   modelKey: "settingFollowRedirects",
   models: ["workspace", "folder", "http_request"],
   title: "Follow redirects",
+});
+
+export const SETTING_HTTP_VERSION = defineRequestSetting({
+  defaultValue: "auto",
+  description: "Force HTTP/1.1 or HTTP/2 for servers that don't negotiate the version correctly.",
+  modelKey: "settingHttpVersion",
+  models: ["workspace", "folder", "http_request"],
+  title: "HTTP version",
 });
 
 export const SETTING_SEND_COOKIES = defineRequestSetting({
