@@ -1,0 +1,20 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm --prefix ../.. run proxy:tauri-before-bundle"
+  },
+  "bundle": {
+    "externalBin": ["vendored/helper/yaak-proxy-helper"],
+    "resources": {
+      "../yaak-app-client/vendored/protoc/include": "vendored/protoc/include",
+      "../yaak-app-client/vendored/protoc/yaakprotoc*": "vendored/protoc/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "hardenedRuntime": true,
+      "entitlements": "macos/entitlements.plist",
+      "files": {
+        "Library/LaunchDaemons/app.yaak.proxy.helper.plist": "macos/app.yaak.proxy.helper.plist"
+      }
+    }
+  }
+}

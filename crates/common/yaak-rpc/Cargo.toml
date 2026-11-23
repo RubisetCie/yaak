@@ -6,7 +6,6 @@ authors = ["Gregory Schier"]
 publish = false
 
 [dependencies]
-log = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 ts-rs = { workspace = true }

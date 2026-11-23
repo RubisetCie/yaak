@@ -63,10 +63,9 @@ const ALL_CAPABILITIES: PlatformCapabilities = {
   interfaceZoom: true,
   plugins: true,
   encryption: true,
-  updater: true,
   clipboardRead: true,
   systemFonts: true,
-  license: true,
+  agents: true,
 };
 
 function createWindow(): PlatformWindow {

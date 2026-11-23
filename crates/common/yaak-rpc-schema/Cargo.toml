@@ -15,4 +15,3 @@ yaak-plugins = { workspace = true }
 yaak-sse = { workspace = true }
 yaak-sync = { workspace = true }
 yaak-templates = { workspace = true }
-yaak-ws = { workspace = true }

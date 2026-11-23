@@ -5,13 +5,13 @@ import { useAtomValue } from "jotai";
 import { useCallback, useMemo, useState } from "react";
 import slugify from "slugify";
 import { activeWorkspaceAtom } from "../hooks/useActiveWorkspace";
-import { pluralizeCount } from "../lib/pluralize";
 import { rpc } from "../lib/rpc";
 import { Checkbox } from "./core/Checkbox";
 import { DetailsBanner } from "./core/DetailsBanner";
 import { DialogFooter } from "./core/Dialog";
 import { Link } from "./core/Link";
 import { platform } from "@yaakapp-internal/platform";
+import { pluralizeCount } from "@yaakapp-internal/lib/pluralize";
 
 interface Props {
   onHide: () => void;

@@ -305,14 +305,12 @@ export interface PlatformCapabilities {
   plugins: boolean;
   /** Workspace encryption backed by a key the host keeps. */
   encryption: boolean;
-  /** In-app update checks and installs. */
-  updater: boolean;
   /** Reading the clipboard without the user pasting first. */
   clipboardRead: boolean;
   /** Enumerating the fonts installed on the machine. */
   systemFonts: boolean;
-  /** Commercial licence activation. */
-  license: boolean;
+  /** Connecting local AI agents through the Yaak CLI on this machine. */
+  agents: boolean;
 }
 
 export type CapabilityName = keyof PlatformCapabilities;

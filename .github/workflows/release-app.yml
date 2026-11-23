@@ -5,8 +5,13 @@ on:
       version_tag:
         type: string
         description: Version tag
-        default: "1.0.0"
+        default: "1.8.0"
         required: true
+      plain_binary:
+        description: Upload plain binary
+        type: boolean
+        required: true
+        default: false
       unit_tests:
         description: Run unit tests
         type: boolean
@@ -90,7 +95,7 @@ jobs:
     timeout-minutes: 360
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
@@ -165,7 +170,7 @@ jobs:
           releaseBody: "Stable release of **Yaak** version __VERSION__"
           releaseDraft: true
           prerelease: false
-          uploadPlainBinary: false
+          uploadPlainBinary: ${{ github.event.inputs.plain_binary == 'true' }}
           assetNamePattern: "[name]-[version]-[platform]-[arch][setup][ext]"
           projectPath: ./crates-tauri/yaak-app-client
           args: "${{ matrix.args }}"
@@ -177,15 +182,14 @@ jobs:
         run: |
           set -euo pipefail
           deb=$(find target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' | head -n 1)
-          version="${GITHUB_REF_NAME#v}"
           extract_dir="target/release/bundle/deb/yaak-cef-linux-${{ matrix.yaak_arch }}"
-          tarball="target/release/bundle/deb/yaak-cef_${version}_linux_${{ matrix.yaak_arch }}.tar.gz"
+          tarball="target/release/bundle/deb/yaak-cef_${{ github.event.inputs.version_tag }}_linux_${{ matrix.yaak_arch }}.tar.gz"
           rm -rf "$extract_dir"
           mkdir -p "$extract_dir"
           dpkg-deb -x "$deb" "$extract_dir"
           tar -C "$extract_dir" -czf "$tarball" .
           for attempt in 1 2 3 4; do
-            if gh release upload "$GITHUB_REF_NAME" "$tarball" --clobber; then
+            if gh release upload v${{ github.event.inputs.version_tag }} "$tarball" --clobber; then
               break
             fi
             if [ "$attempt" -eq 4 ]; then exit 1; fi
@@ -212,7 +216,7 @@ jobs:
           $dest = $setup.FullName -replace '-setup\.exe$', '-setup-machine.exe'
           $dest = $dest.Replace('_', '-')
           Copy-Item $setup.FullName $dest
-          gh release upload "${{ github.ref_name }}" "$destSig" --clobber
+          gh release upload "${{ github.event.inputs.version_tag }}" "$destSig" --clobber
           for ($attempt = 1; $attempt -le 4; $attempt++) {
             gh release upload "v${{ github.event.inputs.version_tag }}" "$dest" --clobber
             if ($LASTEXITCODE -eq 0) { break }

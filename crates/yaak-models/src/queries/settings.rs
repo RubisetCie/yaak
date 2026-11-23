@@ -50,6 +50,7 @@ fn default_settings() -> Settings {
         theme_dark: "yaak-dark".to_string(),
         theme_light: "yaak-light".to_string(),
         colored_methods: false,
+        mcp_server_enabled: false,
         hotkeys: HashMap::new(),
     }
 }

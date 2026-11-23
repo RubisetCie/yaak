@@ -92,6 +92,24 @@ pub enum Commands {
 
     /// Response commands
     Response(ResponseArgs),
+
+    /// Serve Yaak's MCP tools to AI agents like Claude Code, over stdio or with --http
+    Mcp(McpArgs),
+}
+
+#[derive(Args)]
+pub struct McpArgs {
+    /// Serve over HTTP on 127.0.0.1 instead of stdio, for agents that cannot run this command
+    #[arg(long)]
+    pub http: bool,
+
+    /// Port to listen on with --http
+    #[arg(long, default_value_t = yaak_mcp::http::DEFAULT_PORT, requires = "http")]
+    pub port: u16,
+
+    /// Bearer token clients must send with --http; generated and printed when omitted
+    #[arg(long, requires = "http", value_name = "TOKEN")]
+    pub token: Option<String>,
 }
 
 #[derive(Args)]
@@ -223,8 +241,12 @@ pub struct ExportArgs {
     #[arg(long, conflicts_with = "workspace_ids")]
     pub all: bool,
 
-    /// Include private environments in the export
-    #[arg(long)]
+    /// Include private environments in the export. Environments made in the app are private
+    /// unless marked shareable, so they are left out by default, as the app's export does.
+    #[arg(
+        long = "include-private",
+        visible_alias = "include-private-environments"
+    )]
     pub include_private_environments: bool,
 }
 

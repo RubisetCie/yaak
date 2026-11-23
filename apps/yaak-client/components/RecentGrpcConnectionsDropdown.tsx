@@ -1,12 +1,11 @@
 import type { GrpcConnection } from "@yaakapp-internal/models";
 import { deleteModel } from "@yaakapp-internal/models";
-import { HStack, Icon } from "@yaakapp-internal/ui";
+import { HStack, Icon, formatMillis } from "@yaakapp-internal/ui";
 import { differenceInHours, differenceInMinutes, format, isToday, isYesterday } from "date-fns";
 import { useDeleteGrpcConnections } from "../hooks/useDeleteGrpcConnections";
-import { pluralizeCount } from "../lib/pluralize";
 import { Dropdown, type DropdownItem } from "./core/Dropdown";
-import { formatMillis } from "./core/HttpResponseDurationTag";
 import { IconButton } from "./core/IconButton";
+import { pluralizeCount } from "@yaakapp-internal/lib/pluralize";
 
 interface Props {
   connections: GrpcConnection[];

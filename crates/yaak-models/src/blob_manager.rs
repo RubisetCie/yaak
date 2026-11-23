@@ -179,6 +179,68 @@ impl<'a> BlobWriter<'a> {
     }
 }
 
+/// Size of each stored chunk. Bodies arrive in small reads (8 to 16 KiB is typical), so they
+/// are grouped into chunks of this size to avoid thousands of tiny inserts for large bodies.
+pub const BODY_CHUNK_SIZE: usize = 1024 * 1024;
+
+/// Writes one body as it streams, grouping its pieces into [`BODY_CHUNK_SIZE`] chunks. Each
+/// full chunk is inserted as soon as it fills; [`BodyChunkWriter::finish`] inserts the rest.
+pub struct BodyChunkWriter {
+    blob_manager: BlobManager,
+    body_id: String,
+    buf: Vec<u8>,
+    chunk_index: i32,
+    total_bytes: usize,
+}
+
+impl BodyChunkWriter {
+    pub fn new(blob_manager: BlobManager, body_id: impl Into<String>) -> Self {
+        Self {
+            blob_manager,
+            body_id: body_id.into(),
+            buf: Vec::new(),
+            chunk_index: 0,
+            total_bytes: 0,
+        }
+    }
+
+    pub fn write(&mut self, data: &[u8]) -> Result<()> {
+        self.total_bytes += data.len();
+        self.buf.extend_from_slice(data);
+        while self.buf.len() >= BODY_CHUNK_SIZE {
+            let data = self.buf.drain(..BODY_CHUNK_SIZE).collect();
+            self.insert(data)?;
+        }
+        Ok(())
+    }
+
+    /// Inserts the partial last chunk and returns the bytes written in all.
+    pub fn finish(mut self) -> Result<usize> {
+        if !self.buf.is_empty() {
+            let data = std::mem::take(&mut self.buf);
+            self.insert(data)?;
+        }
+        Ok(self.total_bytes)
+    }
+
+    /// [`Self::finish`] without inserting the partial last chunk: it is returned for the caller
+    /// to insert, in a transaction it shares with other writes.
+    pub fn finish_deferred(mut self) -> Option<BodyChunk> {
+        if self.buf.is_empty() {
+            return None;
+        }
+        let data = std::mem::take(&mut self.buf);
+        Some(BodyChunk::new(&self.body_id, self.chunk_index, data))
+    }
+
+    fn insert(&mut self, data: Vec<u8>) -> Result<()> {
+        let chunk = BodyChunk::new(&self.body_id, self.chunk_index, data);
+        self.blob_manager.with_tx(|b| b.insert_chunk(&chunk))?;
+        self.chunk_index += 1;
+        Ok(())
+    }
+}
+
 /// Run migrations for the blob database.
 pub fn migrate_blob_db(pool: &SqlitePool) -> Result<()> {
     info!("Running blob database migrations");
@@ -264,6 +326,21 @@ mod tests {
                 Ok::<_, Error>(())
             })
             .unwrap();
+    }
+
+    /// The last chunk is handed back unwritten, after the full chunks written as they filled.
+    #[test]
+    fn finish_deferred_returns_the_last_chunk_unwritten() {
+        let manager = create_test_manager();
+        let mut writer = BodyChunkWriter::new(manager.clone(), "fl_1.response");
+        writer.write(&vec![b'a'; BODY_CHUNK_SIZE + 3]).unwrap();
+        let last = writer.finish_deferred().unwrap();
+        assert_eq!((last.body_id.as_str(), last.chunk_index), ("fl_1.response", 1));
+        assert_eq!(last.data, b"aaa");
+        assert_eq!(manager.connect().get_chunks("fl_1.response").unwrap().len(), 1);
+
+        let empty = BodyChunkWriter::new(manager.clone(), "fl_2.response");
+        assert!(empty.finish_deferred().is_none());
     }
 
     #[test]
@@ -395,6 +472,34 @@ mod tests {
         assert_eq!(chunks1[0].data, b"data1");
         assert_eq!(chunks2.len(), 1);
         assert_eq!(chunks2[0].data, b"data2");
+    }
+
+    #[test]
+    fn test_chunk_writer_groups_pieces() {
+        let manager = create_test_manager();
+        let body_id = "fl_test.response";
+        let piece = vec![7u8; 16 * 1024];
+        let pieces = BODY_CHUNK_SIZE * 2 / piece.len() + 3;
+
+        let mut writer = BodyChunkWriter::new(manager.clone(), body_id);
+        for _ in 0..pieces {
+            writer.write(&piece).unwrap();
+        }
+        assert_eq!(manager.connect().get_chunks(body_id).unwrap().len(), 2);
+        assert_eq!(writer.finish().unwrap(), pieces * piece.len());
+
+        let chunks = manager.connect().get_chunks(body_id).unwrap();
+        let sizes: Vec<_> = chunks.iter().map(|c| c.data.len()).collect();
+        assert_eq!(sizes, vec![BODY_CHUNK_SIZE, BODY_CHUNK_SIZE, 3 * piece.len()]);
+        assert_eq!(chunks.iter().map(|c| c.chunk_index).collect::<Vec<_>>(), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_chunk_writer_empty_body() {
+        let manager = create_test_manager();
+        let writer = BodyChunkWriter::new(manager.clone(), "fl_empty.request");
+        assert_eq!(writer.finish().unwrap(), 0);
+        assert!(!manager.connect().body_exists("fl_empty.request").unwrap());
     }
 
     #[test]

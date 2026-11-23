@@ -1,8 +1,7 @@
 import classNames from "classnames";
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
-import { useCallback, useRef, useState } from "react";
-
-const START_DISTANCE = 7;
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createHandleDrag } from "./resizeDrag";
 
 export interface ResizeHandleEvent {
   x: number;
@@ -20,6 +19,8 @@ interface Props {
   onReset?: () => void;
   side: "left" | "right" | "top";
   justify: "center" | "end" | "start";
+  /** Fills the space it is given, all of it taking the pointer, with its bar centred in it */
+  fill?: boolean;
 }
 
 export function ResizeHandle({
@@ -31,48 +32,51 @@ export function ResizeHandle({
   onResizeMove,
   onReset,
   side,
+  fill = false,
 }: Props) {
   const vertical = side === "top";
   const [isResizing, setIsResizing] = useState<boolean>(false);
-  const moveState = useRef<{
-    move: (e: MouseEvent) => void;
-    up: (e: MouseEvent) => void;
-    calledStart: boolean;
-    xStart: number;
-    yStart: number;
-  } | null>(null);
+  const stopDrag = useRef<(() => void) | null>(null);
+
+  // A handle that goes away mid-drag ends the drag, so its owner is not left resizing
+  useEffect(() => () => stopDrag.current?.(), []);
 
   const handlePointerDown = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>) => {
-      function move(e: MouseEvent) {
-        if (moveState.current == null) return;
+      stopDrag.current?.();
 
-        const xDistance = moveState.current.xStart - e.clientX;
-        const yDistance = moveState.current.yStart - e.clientY;
-        const distance = Math.abs(vertical ? yDistance : xDistance);
-        if (moveState.current.calledStart) {
-          onResizeMove?.({
-            x: e.clientX,
-            y: e.clientY,
-            xStart: moveState.current.xStart,
-            yStart: moveState.current.yStart,
-          });
-        } else if (distance > START_DISTANCE) {
+      const drag = createHandleDrag({
+        vertical,
+        xStart: e.clientX,
+        yStart: e.clientY,
+        onResizeStart: () => {
           onResizeStart?.();
-          moveState.current.calledStart = true;
           setIsResizing(true);
-        }
+        },
+        onResizeMove,
+        onResizeEnd,
+      });
+
+      function move(e: MouseEvent) {
+        drag.move(e);
+      }
+
+      function removeListeners() {
+        stopDrag.current = null;
+        document.documentElement.removeEventListener("mousemove", move);
+        document.documentElement.removeEventListener("mouseup", up);
       }
 
       function up() {
+        removeListeners();
         setIsResizing(false);
-        moveState.current = null;
-        document.documentElement.removeEventListener("mousemove", move);
-        document.documentElement.removeEventListener("mouseup", up);
-        onResizeEnd?.();
+        drag.up();
       }
 
-      moveState.current = { calledStart: false, xStart: e.clientX, yStart: e.clientY, move, up };
+      stopDrag.current = () => {
+        removeListeners();
+        drag.abort();
+      };
 
       document.documentElement.addEventListener("mousemove", move);
       document.documentElement.addEventListener("mouseup", up);
@@ -88,8 +92,12 @@ export function ResizeHandle({
       onPointerDown={handlePointerDown}
       className={classNames(
         className,
-        "group z-10 flex select-none transition-colors hover:bg-surface-active rounded-full",
-        vertical ? "w-full h-1.5 cursor-row-resize" : "h-full w-1.5 cursor-col-resize",
+        "group z-10 flex select-none",
+        vertical ? "cursor-row-resize" : "cursor-col-resize",
+        fill
+          ? "w-full h-full items-center"
+          : "transition-colors hover:bg-surface-active rounded-full",
+        !fill && (vertical ? "w-full h-1.5" : "h-full w-1.5"),
         justify === "center" && "justify-center",
         justify === "end" && "justify-end",
         justify === "start" && "justify-start",
@@ -98,6 +106,15 @@ export function ResizeHandle({
         side === "top" && "top-0",
       )}
     >
+      {fill && (
+        <div
+          className={classNames(
+            "rounded-full transition-colors group-hover:bg-surface-active",
+            vertical ? "w-full h-1.5" : "h-full w-1.5",
+            isResizing && "bg-surface-active",
+          )}
+        />
+      )}
       {isResizing && (
         <div
           className={classNames(

@@ -58,6 +58,31 @@ mod open {
             std::fs::create_dir_all(parent)?;
         }
         let manager = SqliteConnectionManager::file(path).with_init(|c| init_file_connection(c));
+        build(manager, max_size, min_idle)
+    }
+
+    /// [`file_pool`] over a database encrypted with `key`, keying each connection first.
+    #[cfg(feature = "sqlcipher")]
+    pub fn encrypted_file_pool(
+        path: impl Into<PathBuf>,
+        max_size: u32,
+        min_idle: u32,
+        key: &yaak_database::encryption::DatabaseKey,
+    ) -> Result<SqlitePool> {
+        let path: PathBuf = path.into();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        yaak_database::encryption::init_crypto();
+        let key = key.clone();
+        let manager = SqliteConnectionManager::file(path).with_init(move |c| {
+            yaak_database::encryption::apply_key(c, &key)?;
+            init_file_connection(c)
+        });
+        build(manager, max_size, min_idle)
+    }
+
+    fn build(manager: SqliteConnectionManager, max_size: u32, min_idle: u32) -> Result<SqlitePool> {
         Pool::builder()
             .max_size(max_size)
             .min_idle(Some(min_idle))
@@ -141,16 +166,39 @@ pub fn init_standalone(
     let (readers, writer) = open::file_pools(db_path, 20, 2)?;
     migrate_db(&writer)?;
 
-    info!("Initializing blobs database {blob_path:?}");
-    let (blob_readers, blob_writer) = open::file_pools(blob_path, 10, 1)?;
-    migrate_blob_db(&blob_writer)?;
+    let blob_manager = init_blob_store(blob_path)?;
 
     let (tx, rx) = mpsc::channel();
     let query_manager = QueryManager::new(readers, writer, tx);
-    let blob_manager = BlobManager::new(blob_readers, blob_writer);
     bootstrap(&query_manager)?;
 
     Ok((query_manager, blob_manager, rx))
+}
+
+/// Open (creating and migrating as needed) a blobs database on its own, for a process that
+/// stores bodies without the app database.
+pub fn init_blob_store(blob_path: impl AsRef<Path>) -> Result<BlobManager> {
+    let blob_path = blob_path.as_ref();
+    info!("Initializing blobs database {blob_path:?}");
+    let (blob_readers, blob_writer) = open::file_pools(blob_path, 10, 1)?;
+    migrate_blob_db(&blob_writer)?;
+    Ok(BlobManager::new(blob_readers, blob_writer))
+}
+
+/// [`init_blob_store`] for a blobs database encrypted with `key`, as
+/// [`yaak_database::encryption`] makes one. A plain one is converted first with
+/// [`yaak_database::encryption::encrypt_in_place`].
+#[cfg(all(feature = "sqlcipher", not(target_arch = "wasm32")))]
+pub fn init_encrypted_blob_store(
+    blob_path: impl AsRef<Path>,
+    key: &yaak_database::encryption::DatabaseKey,
+) -> Result<BlobManager> {
+    let blob_path = blob_path.as_ref();
+    info!("Initializing encrypted blobs database {blob_path:?}");
+    let readers = open::encrypted_file_pool(blob_path, 10, 1, key)?;
+    let writer = open::encrypted_file_pool(blob_path, 1, 1, key)?;
+    migrate_blob_db(&writer)?;
+    Ok(BlobManager::new(readers, writer))
 }
 
 /// Initialize the database managers with in-memory SQLite databases.

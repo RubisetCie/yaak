@@ -395,6 +395,7 @@ export type Settings = {
   proxy: ProxySetting | null;
   themeDark: string;
   themeLight: string;
+  mcpServerEnabled: boolean;
   hotkeys: { [key in string]?: Array<string> };
 };
 
