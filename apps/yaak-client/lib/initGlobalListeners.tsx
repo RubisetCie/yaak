@@ -5,12 +5,13 @@ import type {
   JsonPrimitive,
   ShowToastRequest,
 } from "@yaakapp-internal/plugins";
+import type { UpdateInfo, UpdateResponse, UpdateState } from "@yaakapp-internal/tauri-updater";
 import { openSettings } from "../commands/openSettings";
 import { Button } from "../components/core/Button";
 
 // Listen for toasts
 import { platform } from "@yaakapp-internal/platform";
-import { generateId } from "./generateId";
+import { generateId } from "@yaakapp-internal/lib/generateId";
 import { showPrompt } from "./prompt";
 import { showPromptForm } from "./prompt-form";
 import { rpc } from "./rpc";

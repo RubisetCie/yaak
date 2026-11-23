@@ -5,7 +5,7 @@ on:
       version_tag:
         type: string
         description: Version tag
-        default: "1.0.0"
+        default: "1.8.0"
         required: true
       unit_tests:
         description: Run unit tests
@@ -90,7 +90,7 @@ jobs:
     timeout-minutes: 360
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1

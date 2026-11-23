@@ -66,12 +66,12 @@ function capabilitiesFor(): PlatformCapabilities {
     interfaceZoom: false,
     plugins: false,
     encryption: false,
-    updater: false,
     // Reading needs a permission prompt at first paint, which is a bad ask for
     // an app people paste bearer tokens into. Pasting still works everywhere.
     clipboardRead: false,
     systemFonts: false,
-    license: false,
+    // No local CLI to find and no app process to serve MCP from.
+    agents: false,
   };
 }
 

@@ -6,10 +6,21 @@ publish = false
 
 [dependencies]
 base32 = "0.5.1" # For encoding human-readable key
-base64 = "0.22.1" # For encoding in the database
+base64 = "0.23.1" # For encoding in the database
 chacha20poly1305 = "0.11.0"
 keyring = { workspace = true, features = ["apple-native", "windows-native", "sync-secret-service"] }
 log = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 yaak-models = { workspace = true }
+
+# The Secret Service backend keyring uses, to tell a missing service from a refusal.
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus-secret-service = "4.1.0"
+
+[features]
+# `MasterKeySource::memory` and `MasterKeySource::refusing`, for other crates' tests.
+test-support = []
+
+[dev-dependencies]
+tempfile = "3"

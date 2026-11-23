@@ -189,7 +189,7 @@ const HANDLERS: Partial<Record<AppCmd, Handler>> = {
     if (str(payload, "filter") != null) {
       return {
         content: "",
-        error: "Response filters come from a plugin, which this host doesn't run yet",
+        error: "Response filters are not available in the browser yet",
       };
     }
 
@@ -289,7 +289,6 @@ const DECLINED: Partial<Record<AppCmd, [reason: string, capability: CapabilityNa
   // Windows. A tab is the window, and there is only ever one of it.
   cmd_new_child_window: ["Yaak in a browser uses one tab", "multiWindow"],
   cmd_new_main_window: ["Yaak in a browser uses one tab", "multiWindow"],
-  cmd_restart: ["Reload the page to restart Yaak", null],
 
   // Workspace encryption is backed by a key the host keeps for you; a page has
   // nowhere to keep one that a page couldn't also read.

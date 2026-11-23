@@ -374,6 +374,7 @@ pub struct Settings {
     pub proxy: Option<ProxySetting>,
     pub theme_dark: String,
     pub theme_light: String,
+    pub mcp_server_enabled: bool,
     pub hotkeys: HashMap<String, Vec<String>>,
 }
 
@@ -426,6 +427,7 @@ impl UpsertModelInfo for Settings {
             (OpenWorkspaceNewWindow, self.open_workspace_new_window.into()),
             (ThemeDark, self.theme_dark.as_str().into()),
             (ThemeLight, self.theme_light.as_str().into()),
+            (McpServerEnabled, self.mcp_server_enabled.into()),
             (ColoredMethods, self.colored_methods.into()),
             (Proxy, proxy.into()),
             (Hotkeys, hotkeys.into()),
@@ -450,6 +452,7 @@ impl UpsertModelInfo for Settings {
             SettingsIden::Proxy,
             SettingsIden::ThemeDark,
             SettingsIden::ThemeLight,
+            SettingsIden::McpServerEnabled,
             SettingsIden::ColoredMethods,
             SettingsIden::Hotkeys,
         ]
@@ -483,6 +486,7 @@ impl UpsertModelInfo for Settings {
             theme_dark: row.get("theme_dark")?,
             theme_light: row.get("theme_light")?,
             hide_window_controls: row.get("hide_window_controls")?,
+            mcp_server_enabled: row.get("mcp_server_enabled")?,
             colored_methods: row.get("colored_methods")?,
             hotkeys: serde_json::from_str(&hotkeys).unwrap_or_default(),
         })
@@ -2811,7 +2815,7 @@ impl UpsertModelInfo for Plugin {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, TS)]
 #[serde(default, rename_all = "camelCase")]
 #[ts(export, export_to = "gen_models.ts")]
 #[enum_def(table_name = "sync_states")]

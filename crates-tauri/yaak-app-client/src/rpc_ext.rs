@@ -389,6 +389,14 @@ async fn cmd_metadata<R: Runtime>(ctx: ClientCtx<R>, _req: CmdMetadataReq) -> Re
     Ok(crate::cmd_metadata(ctx.window.app_handle().clone()).await?)
 }
 
+async fn cmd_agent_setup_status<R: Runtime>(
+    ctx: ClientCtx<R>,
+    req: CmdAgentSetupStatusReq,
+) -> Result<AgentSetupStatus> {
+    let home = ctx.window.app_handle().path().home_dir()?;
+    Ok(yaak_commands::agents::agent_setup_status(&home, req.agent))
+}
+
 async fn cmd_template_tokens_to_string<R: Runtime>(
     ctx: ClientCtx<R>,
     req: CmdTemplateTokensToStringReq,
@@ -428,10 +436,6 @@ async fn cmd_grpc_go<R: Runtime>(ctx: ClientCtx<R>, req: CmdGrpcGoReq) -> Result
         ctx.window.app_handle().state::<Mutex<GrpcHandle>>(),
     )
     .await?)
-}
-
-async fn cmd_restart<R: Runtime>(ctx: ClientCtx<R>, _req: CmdRestartReq) -> Result<()> {
-    Ok(crate::cmd_restart(ctx.window.app_handle().clone()).await?)
 }
 
 async fn cmd_send_ephemeral_request<R: Runtime>(
@@ -1100,12 +1104,13 @@ async fn cmd_sync_calculate_fs<R: Runtime>(
     Ok(crate::sync_ext::cmd_sync_calculate_fs(&req.dir).await?)
 }
 
-async fn cmd_sync_apply<R: Runtime>(ctx: ClientCtx<R>, req: CmdSyncApplyReq) -> Result<()> {
+async fn cmd_sync_apply<R: Runtime>(ctx: ClientCtx<R>, req: CmdSyncApplyReq) -> Result<bool> {
     Ok(crate::sync_ext::cmd_sync_apply(
         ctx.window.app_handle().clone(),
         req.sync_ops,
         &req.sync_dir,
         &req.workspace_id,
+        req.fs_only,
     )
     .await?)
 }

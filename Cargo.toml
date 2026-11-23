@@ -11,12 +11,15 @@ members = [
   "crates/yaak-core",
   "crates/yaak-common",
   "crates/yaak-crypto",
+  "crates/yaak-filter",
   "crates/yaak-git",
   "crates/yaak-grpc",
   "crates/yaak-http",
   "crates/yaak-lifecycle",
+  "crates/yaak-mcp",
   "crates/yaak-models",
   "crates/yaak-plugins",
+  "crates/yaak-query",
   "crates/yaak-sse",
   "crates/yaak-sync",
   "crates/yaak-templates",
@@ -37,6 +40,7 @@ members = [
   "crates-tauri/yaak-app-proxy",
   "crates-tauri/yaak-fonts",
   "crates-tauri/yaak-mac-window",
+  "crates-tauri/yaak-proxy-helper",
   "crates-tauri/yaak-system-appearance",
   "crates-tauri/yaak-tauri-utils",
   "crates-tauri/yaak-window",
@@ -56,11 +60,11 @@ reqwest = { version = "0.13.5", default-features = false, features = [
   "native-tls",
 ] }
 rustls = { version = "0.23.34", default-features = false }
-rustls-platform-verifier = "0.6.2"
+rustls-platform-verifier = "0.7.1"
 schemars = { version = "0.8.22", features = ["chrono"] }
 serde = "1.0.228"
 serde_json = "1.0.145"
-sha2 = "0.10.9"
+sha2 = "0.11.1"
 tauri = { version = "2.11.1", default-features = false, features = [
   "common-controls-v6",
   "compression",
@@ -84,12 +88,15 @@ yaak = { path = "crates/yaak" }
 yaak-commands = { path = "crates/yaak-commands" }
 yaak-common = { path = "crates/yaak-common" }
 yaak-crypto = { path = "crates/yaak-crypto" }
+yaak-filter = { path = "crates/yaak-filter" }
 yaak-git = { path = "crates/yaak-git" }
 yaak-grpc = { path = "crates/yaak-grpc" }
 yaak-http = { path = "crates/yaak-http" }
 yaak-lifecycle = { path = "crates/yaak-lifecycle" }
+yaak-mcp = { path = "crates/yaak-mcp" }
 yaak-models = { path = "crates/yaak-models" }
 yaak-plugins = { path = "crates/yaak-plugins" }
+yaak-query = { path = "crates/yaak-query" }
 yaak-sse = { path = "crates/yaak-sse" }
 yaak-sync = { path = "crates/yaak-sync" }
 yaak-templates = { path = "crates/yaak-templates" }
@@ -104,6 +111,7 @@ yaak-proxy-lib = { path = "crates-proxy/yaak-proxy-lib" }
 # Internal crates - Tauri-specific
 yaak-fonts = { path = "crates-tauri/yaak-fonts" }
 yaak-mac-window = { path = "crates-tauri/yaak-mac-window" }
+yaak-proxy-helper = { path = "crates-tauri/yaak-proxy-helper" }
 yaak-system-appearance = { path = "crates-tauri/yaak-system-appearance" }
 yaak-tauri-utils = { path = "crates-tauri/yaak-tauri-utils" }
 yaak-window = { path = "crates-tauri/yaak-window" }

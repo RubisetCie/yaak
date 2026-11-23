@@ -1,18 +1,16 @@
 import { settingsAtom } from "@yaakapp-internal/models";
-import { Heading, VStack } from "@yaakapp-internal/ui";
+import { SettingsGeneral as SharedSettingsGeneral } from "@yaakapp-internal/ui";
 import { useAtomValue } from "jotai";
-import { appInfo } from "../../lib/appInfo";
-import { revealInFinderText } from "../../lib/reveal";
+import { useSettingsView } from "../../hooks/useSettingsView";
 import { DismissibleBanner } from "../core/DismissibleBanner";
-import { SettingValue, SettingRow, SettingsList, SettingsSection } from "../core/SettingRow";
-import { platform } from "@yaakapp-internal/platform";
 
 const WORKSPACE_SETTINGS_MOVED_AT = "2026-06-30";
 
 export function SettingsGeneral() {
   const settings = useAtomValue(settingsAtom);
+  const bound = useSettingsView();
 
-  if (settings == null) {
+  if (settings == null || bound == null) {
     return null;
   }
 
@@ -20,13 +18,11 @@ export function SettingsGeneral() {
     settings.createdAt.slice(0, 10) < WORKSPACE_SETTINGS_MOVED_AT;
 
   return (
-    <VStack space={1.5} className="mb-4">
-      <div>
-        <Heading>General</Heading>
-        <p className="text-text-subtle">Configure general settings and more.</p>
-      </div>
-      <SettingsList className="space-y-8">
-        {showWorkspaceSettingsMovedBanner && (
+    <SharedSettingsGeneral
+      view={bound.view}
+      callbacks={bound.callbacks}
+      extraSections={
+        showWorkspaceSettingsMovedBanner && (
           <DismissibleBanner
             id="workspace-settings-moved-2026-06-30"
             color="info"
@@ -37,46 +33,8 @@ export function SettingsGeneral() {
               the workspace switcher menu.
             </p>
           </DismissibleBanner>
-        )}
-
-        <SettingsSection title="App Info">
-          <SettingRow title="Version" description="Current Yaak version.">
-            <SettingValue value={appInfo.version} />
-          </SettingRow>
-          <SettingRow
-            title="Data Directory"
-            description="Where Yaak stores application data."
-            controlClassName="min-w-0 max-w-[min(42rem,55vw)] gap-2"
-          >
-            <SettingValue
-              value={appInfo.appDataDir}
-              actions={[
-                {
-                  title: revealInFinderText,
-                  icon: "folder_open",
-                  onClick: () => platform.revealItemInDir(appInfo.appDataDir),
-                },
-              ]}
-            />
-          </SettingRow>
-          <SettingRow
-            title="Logs Directory"
-            description="Where Yaak writes application logs."
-            controlClassName="min-w-0 max-w-[min(42rem,55vw)] gap-2"
-          >
-            <SettingValue
-              value={appInfo.appLogDir}
-              actions={[
-                {
-                  title: revealInFinderText,
-                  icon: "folder_open",
-                  onClick: () => platform.revealItemInDir(appInfo.appLogDir),
-                },
-              ]}
-            />
-          </SettingRow>
-        </SettingsSection>
-      </SettingsList>
-    </VStack>
+        )
+      }
+    />
   );
 }

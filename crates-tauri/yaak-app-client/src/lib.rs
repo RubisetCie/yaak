@@ -61,7 +61,6 @@ mod models_ext;
 mod plugin_events;
 mod plugins_ext;
 mod render;
-mod restart;
 mod rpc_ext;
 mod sync_ext;
 mod uri_scheme;
@@ -897,11 +896,6 @@ async fn cmd_grpc_go<R: Runtime>(
     Ok(conn.id)
 }
 
-async fn cmd_restart<R: Runtime>(app_handle: AppHandle<R>) -> YaakResult<()> {
-    restart::request_restart(&app_handle);
-    Ok(())
-}
-
 /// Send without saving anything.
 ///
 /// The response never reaches the database, so its body cannot be read back by
@@ -969,10 +963,11 @@ async fn cmd_http_response_body<R: Runtime>(
         .ok_or(GenericError("Failed to find response body".to_string()))?;
 
     match filter {
-        Some(filter) if !filter.is_empty() => Ok(plugins_ext::plugin_manager(&window)
-            .await?
-            .filter_data(&window.plugin_context(), filter, &body, content_type)
-            .await?),
+        Some(filter) if !filter.is_empty() => {
+            let language = yaak_filter::Language::for_content_type(content_type);
+            let result = yaak_filter::filter(language, &body, filter);
+            Ok(FilterResponse { content: result.content, error: result.error })
+        }
         _ => Ok(FilterResponse { content: body, error: None }),
     }
 }
@@ -1338,7 +1333,6 @@ pub fn run() {
                         yaak_system_appearance::emit_change(app_handle, &state);
                     }
                 }
-                RunEvent::Exit => restart::relaunch_if_requested(),
                 _ => {}
             };
         });

@@ -1,69 +1,388 @@
 use std::collections::HashMap;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use rcgen::{BasicConstraints, Certificate, CertificateParams, IsCa, KeyPair, KeyUsagePurpose};
+use rcgen::{
+    BasicConstraints, Certificate, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa,
+    KeyPair, KeyUsagePurpose,
+};
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+use time::{Duration, OffsetDateTime};
 
-pub struct CertificateAuthority {
-    ca_cert: Certificate,
-    ca_cert_der: CertificateDer<'static>,
-    ca_key: KeyPair,
-    cache: Mutex<HashMap<String, Arc<ServerConfig>>>,
+const CA_COMMON_NAME: &str = "Yaak Proxy CA";
+const CA_VALIDITY_DAYS: i64 = 3650;
+const LEAF_VALIDITY_DAYS: i64 = 365;
+
+/// The proxy's root CA, kept on disk as `ca.pem` and `ca.key` so trust survives restarts.
+pub struct CaStore {
+    cert_path: PathBuf,
+    key_path: PathBuf,
+    pem: String,
+    cert_der: CertificateDer<'static>,
+    issuer: Certificate,
+    key: KeyPair,
+    /// Keyed by host and whether HTTP/2 is offered.
+    leaf_configs: Mutex<HashMap<(String, bool), Arc<ServerConfig>>>,
 }
 
-impl CertificateAuthority {
-    pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let mut params = CertificateParams::default();
-        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-        params.key_usages.push(KeyUsagePurpose::KeyCertSign);
-        params.key_usages.push(KeyUsagePurpose::CrlSign);
-        params.distinguished_name.push(rcgen::DnType::CommonName, "Debug Proxy CA");
-        params.distinguished_name.push(rcgen::DnType::OrganizationName, "Debug Proxy");
+/// Encrypts the CA's private key at rest, for [`CaStore::load_or_create_encrypted`].
+pub trait KeyCipher: Send + Sync {
+    fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, String>;
+    fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, String>;
+}
 
-        let key = KeyPair::generate()?;
-        let ca_cert = params.self_signed(&key)?;
-        let ca_cert_der = ca_cert.der().clone();
-
-        Ok(Self { ca_cert, ca_cert_der, ca_key: key, cache: Mutex::new(HashMap::new()) })
+impl CaStore {
+    /// Loads the CA from `dir`, or creates one there (key mode 0600) if either file is missing.
+    /// Safe to call from several processes at once: `ca.lock` serializes them.
+    pub fn load_or_create(dir: &Path) -> io::Result<Self> {
+        Self::open(dir, None)
     }
 
-    pub fn ca_pem(&self) -> String {
-        pem::encode(&pem::Pem::new("CERTIFICATE", self.ca_cert_der.to_vec()))
+    /// [`Self::load_or_create`], keeping `ca.key` encrypted with `cipher`. A plaintext `ca.key`,
+    /// as builds before encryption wrote, is encrypted in place. One `cipher` cannot decrypt,
+    /// encrypted with a key since lost, is replaced along with the certificate: unusable, it
+    /// could only leave the proxy unable to start, and the new one has to be trusted again.
+    pub fn load_or_create_encrypted(dir: &Path, cipher: &dyn KeyCipher) -> io::Result<Self> {
+        Self::open(dir, Some(cipher))
     }
 
-    pub fn server_config(
+    fn open(dir: &Path, cipher: Option<&dyn KeyCipher>) -> io::Result<Self> {
+        let cert_path = dir.join("ca.pem");
+        let key_path = dir.join("ca.key");
+
+        fs::create_dir_all(dir)?;
+        let lock = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(dir.join("ca.lock"))?;
+        lock.lock()?;
+
+        let stored = if cert_path.exists() && key_path.exists() {
+            load_key(&key_path, cipher)?
+        } else {
+            None
+        };
+        let (pem, key) = match stored {
+            Some(key) => (fs::read_to_string(&cert_path)?, key),
+            None => {
+                log::info!("Creating proxy CA in {}", dir.display());
+                let key = KeyPair::generate().map_err(io::Error::other)?;
+                let now = OffsetDateTime::now_utc();
+                let mut params = ca_params();
+                params.not_before = now - Duration::days(1);
+                params.not_after = now + Duration::days(CA_VALIDITY_DAYS);
+                let pem = params.self_signed(&key).map_err(io::Error::other)?.pem();
+                remove_if_exists(&cert_path)?;
+                write_key(&key_path, &key, cipher)?;
+                write_atomic(&cert_path, pem.as_bytes(), false)?;
+                (pem, key)
+            }
+        };
+        drop(lock);
+
+        let cert_der = pem::parse(&pem)
+            .map_err(io::Error::other)
+            .map(|p| CertificateDer::from(p.into_contents()))?;
+        let issuer = ca_params().self_signed(&key).map_err(io::Error::other)?;
+
+        Ok(Self {
+            cert_path,
+            key_path,
+            pem,
+            cert_der,
+            issuer,
+            key,
+            leaf_configs: Mutex::new(HashMap::new()),
+        })
+    }
+
+    /// The CA certificate as PEM, for installing into a trust store.
+    pub fn pem(&self) -> &str {
+        &self.pem
+    }
+
+    /// Path of `ca.pem`.
+    pub fn cert_path(&self) -> &Path {
+        &self.cert_path
+    }
+
+    /// Path of `ca.key`.
+    pub fn key_path(&self) -> &Path {
+        &self.key_path
+    }
+
+    /// The TLS config presented to clients of `host`, offering `h2` in ALPN when `http2` is set
+    /// and `http/1.1` always.
+    pub(crate) fn server_config(
         &self,
-        domain: &str,
-    ) -> Result<Arc<ServerConfig>, Box<dyn std::error::Error + Send + Sync>> {
+        host: &str,
+        http2: bool,
+    ) -> Result<Arc<ServerConfig>, BoxError> {
+        self.server_config_with(host, http2, || self.sign_leaf(host))
+    }
+
+    /// [`Self::server_config`], with `sign` making a new leaf. It runs outside the cache's lock,
+    /// so a host being signed holds up no other host's lookup. Connections racing to the same
+    /// new host may each sign one; the first stored is the one kept.
+    fn server_config_with(
+        &self,
+        host: &str,
+        http2: bool,
+        sign: impl FnOnce() -> Result<ServerConfig, BoxError>,
+    ) -> Result<Arc<ServerConfig>, BoxError> {
+        let key = (host.to_string(), http2);
         {
-            let cache = self.cache.lock().unwrap();
-            if let Some(config) = cache.get(domain) {
+            let mut configs = self.leaf_configs.lock().unwrap();
+            if let Some(config) = configs.get(&key) {
                 return Ok(config.clone());
+            }
+            // The same leaf serves both, so switching HTTP/2 off and on signs nothing new.
+            if let Some(other) = configs.get(&(host.to_string(), !http2)) {
+                let mut config = ServerConfig::clone(other);
+                config.alpn_protocols = alpn(http2);
+                let config = Arc::new(config);
+                configs.insert(key, config.clone());
+                return Ok(config);
             }
         }
 
-        let mut params = CertificateParams::new(vec![domain.to_string()])?;
-        params.distinguished_name.push(rcgen::DnType::CommonName, domain);
+        let mut config = sign()?;
+        config.alpn_protocols = alpn(http2);
+        let mut configs = self.leaf_configs.lock().unwrap();
+        Ok(configs.entry(key).or_insert_with(|| Arc::new(config)).clone())
+    }
+
+    /// A TLS config with a new leaf for `host`, signed by the CA. Key generation and signing
+    /// take a few milliseconds.
+    fn sign_leaf(&self, host: &str) -> Result<ServerConfig, BoxError> {
+        let now = OffsetDateTime::now_utc();
+        let mut params = CertificateParams::new(vec![host.to_string()])?;
+        params.distinguished_name.push(DnType::CommonName, host);
+        params.key_usages = vec![
+            KeyUsagePurpose::DigitalSignature,
+            KeyUsagePurpose::KeyEncipherment,
+        ];
+        params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+        params.use_authority_key_identifier_extension = true;
+        params.not_before = now - Duration::days(1);
+        params.not_after = now + Duration::days(LEAF_VALIDITY_DAYS);
 
         let leaf_key = KeyPair::generate()?;
-        let leaf_cert = params.signed_by(&leaf_key, &self.ca_cert, &self.ca_key)?;
+        let leaf_cert = params.signed_by(&leaf_key, &self.issuer, &self.key)?;
 
-        let cert_der = leaf_cert.der().clone();
-        let key_der = leaf_key.serialize_der();
+        Ok(ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()?
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![leaf_cert.der().clone(), self.cert_der.clone()],
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(leaf_key.serialize_der())),
+            )?)
+    }
+}
 
-        let mut config =
-            ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-                .with_safe_default_protocol_versions()?
-                .with_no_client_auth()
-                .with_single_cert(
-                    vec![cert_der, self.ca_cert_der.clone()],
-                    PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_der)),
-                )?;
-        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-        let config = Arc::new(config);
-        self.cache.lock().unwrap().insert(domain.to_string(), config.clone());
-        Ok(config)
+fn alpn(http2: bool) -> Vec<Vec<u8>> {
+    if http2 { vec![b"h2".to_vec(), b"http/1.1".to_vec()] } else { vec![b"http/1.1".to_vec()] }
+}
+
+/// Issuer fields for the CA. Leaf certificates are signed against these, so they must stay
+/// identical to what was written to `ca.pem`.
+fn ca_params() -> CertificateParams {
+    let mut params = CertificateParams::default();
+    params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+    params.distinguished_name.push(DnType::CommonName, CA_COMMON_NAME);
+    params.distinguished_name.push(DnType::OrganizationName, "Yaak");
+    params
+}
+
+/// The key in `ca.key`: PEM as written without a cipher, or encrypted with one. A plaintext key
+/// is encrypted in place when there is a cipher. None when the cipher cannot decrypt it.
+fn load_key(path: &Path, cipher: Option<&dyn KeyCipher>) -> io::Result<Option<KeyPair>> {
+    let stored = fs::read(path)?;
+    if stored.starts_with(b"-----BEGIN") {
+        let pem = String::from_utf8(stored).map_err(io::Error::other)?;
+        let key = KeyPair::from_pem(&pem).map_err(io::Error::other)?;
+        if cipher.is_some() {
+            write_key(path, &key, cipher)?;
+            log::info!("Encrypted the proxy CA's private key in {}", path.display());
+        }
+        return Ok(Some(key));
+    }
+    let Some(cipher) = cipher else {
+        return Err(io::Error::other(format!(
+            "{} is encrypted, with no key to read it",
+            path.display()
+        )));
+    };
+    let pem = match cipher.decrypt(&stored) {
+        Ok(pem) => String::from_utf8(pem).map_err(io::Error::other)?,
+        Err(e) => {
+            log::warn!(
+                "Failed to decrypt {} ({e}), so the proxy CA is replaced with a new one",
+                path.display()
+            );
+            return Ok(None);
+        }
+    };
+    KeyPair::from_pem(&pem).map(Some).map_err(io::Error::other)
+}
+
+/// Writes `ca.key`, mode 0600, encrypted when there is a cipher.
+fn write_key(path: &Path, key: &KeyPair, cipher: Option<&dyn KeyCipher>) -> io::Result<()> {
+    let pem = key.serialize_pem();
+    let contents = match cipher {
+        Some(cipher) => cipher.encrypt(pem.as_bytes()).map_err(io::Error::other)?,
+        None => pem.into_bytes(),
+    };
+    write_atomic(path, &contents, true)
+}
+
+fn remove_if_exists(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
+/// Writes through a temporary file and a rename, so readers never see a partial file.
+fn write_atomic(path: &Path, contents: &[u8], private: bool) -> io::Result<()> {
+    use std::io::Write;
+    let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
+    tmp_name.push(".tmp");
+    let tmp = path.with_file_name(tmp_name);
+
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    if private {
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    }
+    #[cfg(not(unix))]
+    let _ = private;
+    let mut file = options.open(&tmp)?;
+    #[cfg(unix)]
+    if private {
+        file.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+    }
+    file.write_all(contents)?;
+    file.sync_all()?;
+    fs::rename(&tmp, path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    /// Flips every bit behind a marker that names the key, so a wrong key fails to decrypt.
+    struct TestCipher(u8);
+
+    impl KeyCipher for TestCipher {
+        fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, String> {
+            Ok([b'k', self.0].into_iter().chain(data.iter().map(|b| !b)).collect())
+        }
+
+        fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, String> {
+            let rest = data.strip_prefix(&[b'k', self.0][..]).ok_or("wrong key")?;
+            Ok(rest.iter().map(|b| !b).collect())
+        }
+    }
+
+    fn private(path: &Path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        #[cfg(not(unix))]
+        let _ = path;
+    }
+
+    #[test]
+    fn keeps_the_key_encrypted() {
+        let dir = tempfile::tempdir().unwrap();
+        let created = CaStore::load_or_create_encrypted(dir.path(), &TestCipher(1)).unwrap();
+        let stored = fs::read(created.key_path()).unwrap();
+        assert!(!stored.windows(11).any(|w| w == b"PRIVATE KEY"), "ca.key is plaintext");
+        private(created.key_path());
+        // The certificate is public, and stays as it was.
+        assert!(fs::read_to_string(created.cert_path()).unwrap().starts_with("-----BEGIN"));
+
+        let loaded = CaStore::load_or_create_encrypted(dir.path(), &TestCipher(1)).unwrap();
+        assert_eq!(loaded.pem(), created.pem());
+        assert_eq!(fs::read(loaded.key_path()).unwrap(), stored, "rewritten");
+        loaded.server_config("example.test", true).unwrap();
+
+        let err = CaStore::load_or_create(dir.path()).err().unwrap();
+        assert!(err.to_string().ends_with("ca.key is encrypted, with no key to read it"), "{err}");
+    }
+
+    #[test]
+    fn encrypts_a_plaintext_key_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = CaStore::load_or_create(dir.path()).unwrap();
+        let pem_key = fs::read_to_string(plain.key_path()).unwrap();
+
+        let encrypted = CaStore::load_or_create_encrypted(dir.path(), &TestCipher(1)).unwrap();
+        assert_eq!(encrypted.pem(), plain.pem(), "the same CA, still trusted");
+        let stored = fs::read(encrypted.key_path()).unwrap();
+        assert_eq!(TestCipher(1).decrypt(&stored).unwrap(), pem_key.as_bytes());
+        private(encrypted.key_path());
+        assert!(!dir.path().join("ca.key.tmp").exists());
+    }
+
+    #[test]
+    fn replaces_a_ca_whose_key_cannot_be_decrypted() {
+        let dir = tempfile::tempdir().unwrap();
+        let lost = CaStore::load_or_create_encrypted(dir.path(), &TestCipher(1)).unwrap();
+
+        let replaced = CaStore::load_or_create_encrypted(dir.path(), &TestCipher(2)).unwrap();
+        assert_ne!(replaced.pem(), lost.pem());
+        let stored = fs::read(replaced.key_path()).unwrap();
+        assert!(TestCipher(2).decrypt(&stored).is_ok());
+        let again = CaStore::load_or_create_encrypted(dir.path(), &TestCipher(2)).unwrap();
+        assert_eq!(again.pem(), replaced.pem());
+    }
+
+    /// A host whose leaf is still being signed holds up no lookup of another host's.
+    #[test]
+    fn signing_one_host_does_not_block_another() {
+        let dir = tempfile::tempdir().unwrap();
+        let ca = Arc::new(CaStore::load_or_create(dir.path()).unwrap());
+        let cached = ca.server_config("cached.test", true).unwrap();
+
+        let (signing_tx, signing_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let slow = std::thread::spawn({
+            let ca = ca.clone();
+            move || {
+                ca.server_config_with("slow.test", true, || {
+                    signing_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    ca.sign_leaf("slow.test")
+                })
+            }
+        });
+        signing_rx.recv().unwrap();
+
+        let (found_tx, found_rx) = mpsc::channel();
+        std::thread::spawn({
+            let ca = ca.clone();
+            move || found_tx.send(ca.server_config("cached.test", true).unwrap())
+        });
+        let found = found_rx.recv_timeout(std::time::Duration::from_secs(5));
+        release_tx.send(()).unwrap();
+        let found = found.expect("the cached lookup waited for another host's signing");
+        assert!(Arc::ptr_eq(&found, &cached));
+
+        let slow = slow.join().unwrap().unwrap();
+        assert_eq!(slow.alpn_protocols, alpn(true));
+        assert!(Arc::ptr_eq(&slow, &ca.server_config("slow.test", true).unwrap()), "kept");
     }
 }
